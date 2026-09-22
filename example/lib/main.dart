@@ -292,14 +292,16 @@ class _QualityGuardPageState extends State<QualityGuardPage> {
                   Text(
                     'Check image quality',
                     style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                      fontWeight: FontWeight.w800,
-                      color: const Color(0xFF17201E),
-                    ),
+                          fontWeight: FontWeight.w800,
+                          color: const Color(0xFF17201E),
+                        ),
                   ),
                   const SizedBox(height: 6),
                   Text(
                     'Choose an image and check it for blur, lighting, and contrast.',
-                    style: Theme.of(context).textTheme.bodyLarge
+                    style: Theme.of(context)
+                        .textTheme
+                        .bodyLarge
                         ?.copyWith(color: const Color(0xFF64706D)),
                   ),
                   const SizedBox(height: 24),
@@ -774,12 +776,10 @@ class _ResultView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final passed = result.isValid;
-    final statusColor = passed
-        ? const Color(0xFF167052)
-        : const Color(0xFFB5472D);
-    final statusBackground = passed
-        ? const Color(0xFFE7F5EE)
-        : const Color(0xFFFFEDE7);
+    final statusColor =
+        passed ? const Color(0xFF167052) : const Color(0xFFB5472D);
+    final statusBackground =
+        passed ? const Color(0xFFE7F5EE) : const Color(0xFFFFEDE7);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,

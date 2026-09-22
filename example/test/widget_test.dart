@@ -1,6 +1,6 @@
-import 'package:example/main.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:image_quality_guard_example/main.dart';
 
 void main() {
   testWidgets('quality guard demo shows the focused upload flow', (

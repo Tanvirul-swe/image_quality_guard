@@ -1,17 +1,17 @@
-# example
+# Image Quality Guard Example
 
-A new Flutter project.
+An interactive Flutter example for `image_quality_guard`.
 
-## Getting Started
+The app can select an image from the gallery or camera, run the combined
+quality validator, compare every built-in preset, and configure custom
+sharpness, brightness, and contrast thresholds.
 
-This project is a starting point for a Flutter application.
+Run the example with:
 
-A few resources to get you started if this is your first Flutter project:
+```console
+flutter pub get
+flutter run
+```
 
-- [Learn Flutter](https://docs.flutter.dev/get-started/learn-flutter)
-- [Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Flutter learning resources](https://docs.flutter.dev/reference/learning-resources)
-
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+Camera and gallery availability depends on the selected Flutter platform and
+device capabilities.
