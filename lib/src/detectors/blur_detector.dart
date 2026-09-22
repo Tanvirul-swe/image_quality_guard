@@ -20,7 +20,8 @@ class BlurDetector {
   ///
   /// The [threshold] determines the sensitivity of blur detection.
   /// Typical values range from 50 to 500, with 100 being a good default.
-  const BlurDetector({this.threshold = 100.0});
+  const BlurDetector({this.threshold = 100.0})
+      : assert(threshold > 0, 'threshold must be positive');
 
   /// Detects blur in an image from raw bytes.
   ///
@@ -41,12 +42,7 @@ class BlurDetector {
     // Convert to grayscale for edge detection
     final grayscale = img.grayscale(image);
 
-    // Apply Laplacian filter to detect edges
-    // Laplacian kernel: [0, 1, 0, 1, -4, 1, 0, 1, 0]
-    final laplacian = _applyLaplacian(grayscale);
-
-    // Calculate variance of the Laplacian result
-    final variance = _calculateVariance(laplacian);
+    final variance = _calculateLaplacianVariance(grayscale);
 
     // Calculate confidence based on how far the variance is from threshold
     final confidence = _calculateConfidence(variance);
@@ -59,16 +55,15 @@ class BlurDetector {
     );
   }
 
-  /// Applies the Laplacian filter to detect edges.
-  List<double> _applyLaplacian(img.Image grayscale) {
+  /// Calculates Laplacian variance without retaining a value per pixel.
+  double _calculateLaplacianVariance(img.Image grayscale) {
     final width = grayscale.width;
     final height = grayscale.height;
-    final result = <double>[];
-
-    // Laplacian kernel
     const kernel = [0, 1, 0, 1, -4, 1, 0, 1, 0];
+    var count = 0;
+    var mean = 0.0;
+    var sumSquaredDifference = 0.0;
 
-    // Apply convolution (skip borders)
     for (var y = 1; y < height - 1; y++) {
       for (var x = 1; x < width - 1; x++) {
         var sum = 0.0;
@@ -83,32 +78,15 @@ class BlurDetector {
           }
         }
 
-        result.add(sum);
+        count++;
+        final difference = sum - mean;
+        mean += difference / count;
+        final adjustedDifference = sum - mean;
+        sumSquaredDifference += difference * adjustedDifference;
       }
     }
 
-    return result;
-  }
-
-  /// Calculates the variance of the Laplacian values.
-  double _calculateVariance(List<double> values) {
-    if (values.isEmpty) return 0.0;
-
-    // Calculate mean
-    var sum = 0.0;
-    for (final value in values) {
-      sum += value;
-    }
-    final mean = sum / values.length;
-
-    // Calculate variance
-    var sumSquaredDiff = 0.0;
-    for (final value in values) {
-      final diff = value - mean;
-      sumSquaredDiff += diff * diff;
-    }
-
-    return sumSquaredDiff / values.length;
+    return count == 0 ? 0 : sumSquaredDifference / count;
   }
 
   /// Calculates confidence based on distance from threshold.

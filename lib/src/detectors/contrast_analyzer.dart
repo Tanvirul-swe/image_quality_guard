@@ -20,7 +20,8 @@ class ContrastAnalyzer {
   ///
   /// The [minContrast] value represents the minimum standard deviation
   /// of pixel luminance values for acceptable contrast. Default is 50.0.
-  const ContrastAnalyzer({this.minContrast = 50.0});
+  const ContrastAnalyzer({this.minContrast = 50.0})
+      : assert(minContrast >= 0, 'minContrast must be non-negative');
 
   /// Analyzes contrast of an image from raw bytes.
   ///
@@ -49,34 +50,22 @@ class ContrastAnalyzer {
 
   /// Calculates the contrast score using standard deviation of luminance.
   double _calculateContrast(img.Image image) {
-    final luminanceValues = <double>[];
+    var count = 0;
+    var mean = 0.0;
+    var sumSquaredDifference = 0.0;
 
-    // Collect all luminance values
     for (var y = 0; y < image.height; y++) {
       for (var x = 0; x < image.width; x++) {
         final pixel = image.getPixel(x, y);
-        luminanceValues.add(img.getLuminance(pixel).toDouble());
+        final luminance = img.getLuminance(pixel).toDouble();
+        count++;
+        final difference = luminance - mean;
+        mean += difference / count;
+        final adjustedDifference = luminance - mean;
+        sumSquaredDifference += difference * adjustedDifference;
       }
     }
 
-    if (luminanceValues.isEmpty) return 0.0;
-
-    // Calculate mean
-    var sum = 0.0;
-    for (final value in luminanceValues) {
-      sum += value;
-    }
-    final mean = sum / luminanceValues.length;
-
-    // Calculate standard deviation
-    var sumSquaredDiff = 0.0;
-    for (final value in luminanceValues) {
-      final diff = value - mean;
-      sumSquaredDiff += diff * diff;
-    }
-    final variance = sumSquaredDiff / luminanceValues.length;
-    final standardDeviation = math.sqrt(variance);
-
-    return standardDeviation;
+    return count == 0 ? 0 : math.sqrt(sumSquaredDifference / count);
   }
 }

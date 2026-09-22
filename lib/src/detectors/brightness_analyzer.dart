@@ -26,7 +26,12 @@ class BrightnessAnalyzer {
   const BrightnessAnalyzer({
     this.minBrightness = 40.0,
     this.maxBrightness = 220.0,
-  });
+  })  : assert(minBrightness >= 0 && minBrightness <= 255,
+            'minBrightness must be between 0 and 255'),
+        assert(maxBrightness >= 0 && maxBrightness <= 255,
+            'maxBrightness must be between 0 and 255'),
+        assert(minBrightness < maxBrightness,
+            'minBrightness must be less than maxBrightness');
 
   /// Analyzes brightness of an image from raw bytes.
   ///

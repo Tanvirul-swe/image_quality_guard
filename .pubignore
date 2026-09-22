@@ -1,0 +1,11 @@
+.dart_tool/
+.idea/
+.vscode/
+*.iml
+build/
+coverage/
+doc/
+pubspec.lock
+example/.dart_tool/
+example/build/
+example/coverage/
