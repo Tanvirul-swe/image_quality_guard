@@ -28,16 +28,16 @@
 
 ### 🔑 Key Capabilities
 
-| Capability | Description | Icon |
-|---|---|:---:|
-| **Blur Detection** | Laplacian variance analysis to flag out-of-focus images | 🔍 |
-| **Brightness Analysis** | Classifies images as too dark, optimal, or too bright | 💡 |
-| **Contrast Measurement** | luminance standard deviation for depth and clarity | 🎨 |
-| **One-Call Validation** | Combined pass/fail with a single `validate()` call | ✅ |
-| **5 Presets** | Card, document, photo, relaxed, and strict configurations | ⚙️ |
-| **Custom Thresholds** | Fine-tune every metric for your specific use case | 🎛️ |
-| **Background Isolate** | Non-blocking analysis for large images | 🚀 |
-| **Encoded & Decoded Input** | Accept raw bytes or pre-decoded `image` package objects | 📦 |
+| Capability | Description |
+|---|---|
+| 🔍 **Blur Detection** | Laplacian variance analysis to flag out-of-focus images |
+| 💡 **Brightness Analysis** | Classifies images as too dark, optimal, or too bright |
+| 🎨 **Contrast Measurement** | luminance standard deviation for depth and clarity |
+| ✅ **One-Call Validation** | Combined pass/fail with a single `validate()` call |
+| ⚙️ **5 Presets** | Card, document, photo, relaxed, and strict configurations |
+| 🎛️ **Custom Thresholds** | Fine-tune every metric for your specific use case |
+| 🚀 **Background Isolate** | Non-blocking analysis for large images |
+| 📦 **Encoded & Decoded Input** | Accept raw bytes or pre-decoded `image` package objects |
 
 ---
 
@@ -107,14 +107,14 @@ final guard = ImageQualityGuard.analyze(
 );
 ```
 
-| Preset | Icon | Intended Use | Blur | Min Bright | Max Bright | Min Contrast |
-|--------|:----:|---|:---:|:---:|:---:|:---:|
-| `ImageQualityConfig.cardScanning` | 🪪 | IDs, bank cards, licenses | 80 | 35 | 230 | 40 |
-| `ImageQualityConfig.documentScanning` | 📄 | Forms, receipts, printed text | 120 | 45 | 215 | 55 |
-| `ImageQualityConfig.photoCapture` | 📷 | High-quality photo capture | 200 | 30 | 235 | 45 |
-| `ImageQualityConfig.relaxed` | 😊 | Challenging lighting / low-quality cameras | 50 | 25 | 240 | 30 |
-| `ImageQualityConfig.strict` | ✔️ | Strict quality requirements | 250 | 50 | 200 | 65 |
-| `ImageQualityConfig.mobile` | 📱 | Balanced defaults for mobile (no downsampling limit change) | 100 | 40 | 220 | 50 |
+| Preset | Intended Use | Blur | Min Bright | Max Bright | Min Contrast |
+|---|---|:---:|:---:|:---:|:---:|
+| 🪪 `ImageQualityConfig.cardScanning` | IDs, bank cards, licenses | 80 | 35 | 230 | 40 |
+| 📄 `ImageQualityConfig.documentScanning` | Forms, receipts, printed text | 120 | 45 | 215 | 55 |
+| 📷 `ImageQualityConfig.photoCapture` | High-quality photo capture | 200 | 30 | 235 | 45 |
+| 😊 `ImageQualityConfig.relaxed` | Challenging lighting / low-quality cameras | 50 | 25 | 240 | 30 |
+| ✔️ `ImageQualityConfig.strict` | Strict quality requirements | 250 | 50 | 200 | 65 |
+| 📱 `ImageQualityConfig.mobile` | Balanced defaults for mobile (no downsampling limit change) | 100 | 40 | 220 | 50 |
 
 ---
 
