@@ -14,6 +14,9 @@
   <a href="https://github.com/Tanvirul-swe/image_quality_guard">
     <img src="https://img.shields.io/github/stars/Tanvirul-swe/image_quality_guard.svg?color=blue&label=stars" alt="GitHub stars">
   </a>
+  <a href="https://Tanvirul-swe.github.io/image_quality_guard/">
+    <img src="https://img.shields.io/badge/Web%20Demo-%F0%9F%8C%90-blue" alt="Web Demo">
+  </a>
   <img src="https://img.shields.io/badge/Flutter-%2302569B.svg?alt=Flutter&color=blue" alt="Flutter">
   <img src="https://img.shields.io/badge/Dart-%230175C2.svg?alt=Dart&color=blue" alt="Dart">
 </p>
@@ -37,6 +40,7 @@
 | ⚙️ **5 Presets** | Card, document, photo, relaxed, and strict configurations |
 | 🎛️ **Custom Thresholds** | Fine-tune every metric for your specific use case |
 | 🚀 **Background Isolate** | Non-blocking analysis for large images |
+| 🌐 **Web Support** | Runs on Flutter web — desktop, mobile, and browser |
 | 📦 **Encoded & Decoded Input** | Accept raw bytes or pre-decoded `image` package objects |
 
 ---
@@ -329,6 +333,21 @@ An interactive Flutter example with camera/gallery input, every preset, custom t
 ```console
 cd example
 flutter run
+```
+
+### 🌐 Web Demo
+
+The example app supports **Flutter web**. Visit the live demo to explore all features interactively in your browser:
+
+🔗 **[Web Demo](https://Tanvirul-swe.github.io/image_quality_guard/)**
+
+The web version includes image preview, quality profile selection, custom threshold sliders, and real-time results visualization.
+
+To build and deploy the web version yourself:
+
+```console
+cd example
+flutter build web
 ```
 
 ---
