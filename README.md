@@ -347,6 +347,10 @@ The web version includes image preview, quality profile selection, custom thresh
 
 The web app is automatically deployed to **GitHub Pages** on every push to `main` via `.github/workflows/deploy.yml`.
 
+The workflow uses `peaceiris/actions-gh-pages` to build and publish to a `gh-pages` branch. After the first successful run, enable GitHub Pages in your repo settings:
+
+**Settings** → **Pages** → **Source** → Select **gh-pages branch**.
+
 To deploy manually:
 
 ```console
@@ -354,7 +358,7 @@ cd example
 flutter build web --base-href /image_quality_guard/ --release
 ```
 
-Then upload `example/build/web/` to GitHub Pages (Settings → Pages → Source → GitHub Actions).
+Then publish `example/build/web/` to a `gh-pages` branch or upload it to GitHub Pages.
 
 ---
 
