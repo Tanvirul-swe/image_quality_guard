@@ -226,6 +226,102 @@ final contrast = validator.checkContrastFromImage(decodedImage);
 
 ---
 
+## 🧮 How It Works
+
+All three checks share the same pipeline: **decode → convert to grayscale → measure**. The image is converted to a flat 8-bit luminance buffer (one byte per pixel) and every metric is computed from that buffer alone.
+
+### Processing Pipeline
+
+```
+Raw Image Bytes
+      │
+      ▼
+┌──────────────────┐
+│  Decode (image   │   → img.Image (RGBA)
+│  package)        │
+└────────┬─────────┘
+         │
+         ▼
+┌──────────────────────────┐
+│  Luminance Extraction    │   → Uint8List (0–255, one byte/pixel)
+│  Rec. 601 luma:          │     0.299R + 0.587G + 0.114B
+│  0.299R + 0.587G + 0.114B│
+└────────┬─────────────────┘
+         │
+    ┌────┼────────────┐
+    │    │            │
+    ▼    ▼            ▼
+┌──────┐┌──────────┐┌────────────┐
+│ Blur ││Brightness││  Contrast  │
+│      ││          ││            │
+└──────┘└──────────┘└────────────┘
+```
+
+---
+
+### 🔍 Blur Detection — Laplacian Variance
+
+Blur is measured using the **Laplacian variance method**, a well-established edge-detection technique:
+
+1. **Apply a Laplacian filter** — For every non-border pixel, compute the edge response:
+   ```
+   response = 4 × center − up − down − left − right
+   ```
+   This 4-neighbour Laplacian highlights regions of rapid intensity change (edges).
+
+2. **Calculate variance** — The variance of all Laplacian response values is computed using **Welford's online algorithm** (no per-pixel list is allocated, keeping memory constant regardless of image size):
+   - **High variance** → many strong edges → image is **sharp** ✅
+   - **Low variance** → edges are smoothed out → image is **blurry** ❌
+
+3. **Compare against threshold** — If variance < `blurThreshold`, the image is classified as blurry. Higher `blurThreshold` values require a sharper image.
+
+4. **Confidence score** — A confidence value (0.0–1.0) indicates how far the variance is from the threshold. Images far from the threshold have high confidence; borderline images have lower confidence.
+
+```dart
+// Conceptual example of what happens internally:
+//
+// For a sharp image (many crisp edges):
+//   Laplacian responses: [120, 180, 95, 210, ...]  → Variance: ~8500  ✅ Sharp
+//
+// For a blurry image (smoothed edges):
+//   Laplacian responses: [8, 3, 12, 5, ...]        → Variance: ~12    ❌ Blurry
+```
+
+> **Why Laplacian?** Unlike simple gradient methods, the Laplacian is isotropic (detects edges in all directions equally) and is widely used in camera auto-focus systems, making it a natural choice for general-purpose sharpness detection.
+
+---
+
+### 💡 Brightness Analysis
+
+Brightness is the **mean (average) luminance** across all pixels:
+
+1. Each pixel is converted to grayscale using the **Rec. 601 luma formula**: `0.299R + 0.587G + 0.114B`
+2. The average of all luminance values is calculated on a **0–255 scale**
+3. The result is classified:
+   - **Below `minBrightness`** → Too dark 🌑
+   - **Above `maxBrightness`** → Too bright ☀️
+   - **Within range** → Optimal ✅
+
+---
+
+### 🎨 Contrast Measurement
+
+Contrast is the **population standard deviation** of pixel luminance values:
+
+1. All luminance samples are analyzed in a single pass
+2. Standard deviation is computed incrementally using **Welford's algorithm**
+3. Classification:
+   - **Low standard deviation** → Flat histogram, poor contrast (washed out)
+   - **High standard deviation** → Wide tonal range, good contrast (vivid)
+
+---
+
+### 🧠 Memory Efficiency
+
+Both brightness and contrast (and blur via the isolate path) share a key optimization: **Welford's online algorithm** accumulates mean and variance incrementally. The package never materializes a per-pixel list of intermediate values, so memory stays constant regardless of image size.
+
+---
+
 ## 📱 Example App
 
 An interactive Flutter example with camera/gallery input, every preset, custom threshold sliders, image preview, and a focused results view:
