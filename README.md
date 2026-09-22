@@ -343,12 +343,18 @@ The example app supports **Flutter web**. Visit the live demo to explore all fea
 
 The web version includes image preview, quality profile selection, custom threshold sliders, and real-time results visualization.
 
-To build and deploy the web version yourself:
+#### Deployment
+
+The web app is automatically deployed to **GitHub Pages** on every push to `main` via `.github/workflows/deploy.yml`.
+
+To deploy manually:
 
 ```console
 cd example
-flutter build web
+flutter build web --base-href /image_quality_guard/ --release
 ```
+
+Then upload `example/build/web/` to GitHub Pages (Settings → Pages → Source → GitHub Actions).
 
 ---
 
