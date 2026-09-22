@@ -1,79 +1,131 @@
-# Image Quality Guard
+<p align="center">
+  <img src="asset/logo.png" alt="Image Quality Guard" width="120" />
+</p>
 
-Detect blurry, poorly lit, and low-contrast images before they enter your
-upload, scanning, or recognition workflow.
+<p align="center">
+  <b>Image Quality Guard</b><br>
+  Detect blurry, poorly lit, and low-contrast images before they enter your upload, scanning, or recognition workflow.
+</p>
 
-`image_quality_guard` is a platform-independent Dart package designed for
-Flutter and Dart applications. It analyzes image bytes without native runtime
-dependencies and provides both a combined validator and individual checks.
+<p align="center">
+  <a href="https://pub.dev/packages/image_quality_guard">
+    <img src="https://img.shields.io/pub/v/image_quality_guard.svg?color=blue&label=pub.dev" alt="pub.dev version">
+  </a>
+  <a href="https://github.com/Tanvirul-swe/image_quality_guard">
+    <img src="https://img.shields.io/github/stars/Tanvirul-swe/image_quality_guard.svg?color=blue&label=stars" alt="GitHub stars">
+  </a>
+  <img src="https://img.shields.io/badge/Flutter-%2302569B.svg?alt=Flutter&color=blue" alt="Flutter">
+  <img src="https://img.shields.io/badge/Dart-%230175C2.svg?alt=Dart&color=blue" alt="Dart">
+</p>
 
-## Features
+---
 
-- Blur detection using Laplacian variance
-- Brightness classification as too dark, optimal, or too bright
-- Contrast measurement using luminance standard deviation
-- One-call validation with a combined pass/fail result
-- Presets for cards, documents, photos, relaxed checks, and strict checks
-- Custom thresholds for application-specific quality requirements
-- Support for encoded image bytes and decoded `image` package objects
+## 🎯 What is Image Quality Guard?
 
-## Installation
+`image_quality_guard` is a platform-independent Dart package for **Flutter** and **Dart** applications. It analyzes image bytes to detect quality issues — blur, brightness, and contrast — before images enter your upload, scanning, or recognition pipeline.
 
-Add the package to your Flutter project:
+**No native runtime dependencies.** Analysis runs entirely in Dart, with optional background isolate support for smooth UI performance.
+
+### 🔑 Key Capabilities
+
+| Capability | Description | Icon |
+|---|---|:---:|
+| **Blur Detection** | Laplacian variance analysis to flag out-of-focus images | 🔍 |
+| **Brightness Analysis** | Classifies images as too dark, optimal, or too bright | 💡 |
+| **Contrast Measurement** | luminance standard deviation for depth and clarity | 🎨 |
+| **One-Call Validation** | Combined pass/fail with a single `validate()` call | ✅ |
+| **5 Presets** | Card, document, photo, relaxed, and strict configurations | ⚙️ |
+| **Custom Thresholds** | Fine-tune every metric for your specific use case | 🎛️ |
+| **Background Isolate** | Non-blocking analysis for large images | 🚀 |
+| **Encoded & Decoded Input** | Accept raw bytes or pre-decoded `image` package objects | 📦 |
+
+---
+
+## 📦 Installation
 
 ```console
 flutter pub add image_quality_guard
 ```
 
-Then import it:
-
 ```dart
 import 'package:image_quality_guard/image_quality_guard.dart';
 ```
 
-## Quick start
+---
 
-Pass encoded image bytes from a camera, gallery picker, file, or network
-response to `ImageQualityValidator`:
+## 🚀 Quick Start
+
+### Main API: `ImageQualityGuard` (recommended)
+
+Pass encoded image bytes from a camera, gallery picker, file, or network response. Analysis runs on a **background isolate** — your UI stays responsive:
+
+```dart
+import 'dart:typed_data';
+import 'package:image_quality_guard/image_quality_guard.dart';
+
+final result = await ImageQualityGuard.analyze(imageBytes);
+
+if (result.isValid) {
+  // ✅ Image quality is acceptable — proceed with upload or processing
+} else {
+  // ❌ Issues detected
+  for (final issue in result.issues) {
+    print(issue);
+  }
+}
+```
+
+> ⚠️ Invalid or unsupported image bytes throw an `ImageDecodeException`.
+
+---
+
+### Alternative API: `ImageQualityValidator`
+
+A convenience wrapper that returns `QualityResult` with typed sub-results:
 
 ```dart
 final validator = ImageQualityValidator();
 final result = await validator.validate(imageBytes);
 
 if (result.isValid) {
-  // Continue with the upload or recognition flow.
+  // Proceed with the upload or recognition flow.
 } else {
-  print(result.issues);
+  print(result.errorMessage);
 }
 ```
 
-Invalid or unsupported image bytes throw an `ArgumentError`.
+---
 
-## Presets
+## 🏷️ Presets
 
-Select a preset that matches the capture flow:
+Choose a preset matching your capture scenario:
 
 ```dart
-final validator = ImageQualityValidator(
-  config: QualityConfig.documentScanning,
+final guard = ImageQualityGuard.analyze(
+  imageBytes,
+  config: ImageQualityConfig.documentScanning,
 );
-
-final result = await validator.validate(imageBytes);
 ```
 
-| Preset | Intended use |
-| --- | --- |
-| `QualityConfig.cardScanning` | IDs, bank cards, and licenses |
-| `QualityConfig.documentScanning` | Forms, receipts, and printed text |
-| `QualityConfig.photoCapture` | Higher-quality photo capture |
-| `QualityConfig.relaxed` | Challenging lighting or lower-quality cameras |
-| `QualityConfig.strict` | Workflows with higher quality requirements |
+| Preset | Icon | Intended Use | Blur | Min Bright | Max Bright | Min Contrast |
+|--------|:----:|---|:---:|:---:|:---:|:---:|
+| `ImageQualityConfig.cardScanning` | 🪪 | IDs, bank cards, licenses | 80 | 35 | 230 | 40 |
+| `ImageQualityConfig.documentScanning` | 📄 | Forms, receipts, printed text | 120 | 45 | 215 | 55 |
+| `ImageQualityConfig.photoCapture` | 📷 | High-quality photo capture | 200 | 30 | 235 | 45 |
+| `ImageQualityConfig.relaxed` | 😊 | Challenging lighting / low-quality cameras | 50 | 25 | 240 | 30 |
+| `ImageQualityConfig.strict` | ✔️ | Strict quality requirements | 250 | 50 | 200 | 65 |
+| `ImageQualityConfig.mobile` | 📱 | Balanced defaults for mobile (no downsampling limit change) | 100 | 40 | 220 | 50 |
 
-## Custom thresholds
+---
+
+## 🎛️ Custom Thresholds
+
+Override individual metrics for application-specific needs:
 
 ```dart
-final validator = ImageQualityValidator(
-  config: const QualityConfig(
+final guard = ImageQualityGuard.analyze(
+  imageBytes,
+  config: ImageQualityConfig(
     blurThreshold: 150,
     minBrightness: 50,
     maxBrightness: 210,
@@ -82,61 +134,138 @@ final validator = ImageQualityValidator(
 );
 ```
 
-- A higher `blurThreshold` requires a sharper image.
-- Brightness uses a `0` to `255` luminance scale.
-- A higher `minContrast` requires more luminance variation.
+| Parameter | Description | Range | Default |
+|---|---|:---:|:---:|
+| `blurThreshold` | Higher = sharper image required | 1–∞ | 100.0 |
+| `minBrightness` | Below = too dark (0–255 luminance) | 0–255 | 40.0 |
+| `maxBrightness` | Above = too bright/overexposed (0–255) | 0–255 | 220.0 |
+| `minContrast` | Higher = more luminance variation required | 0–∞ | 50.0 |
+| `maxAnalysisDimension` | Longest side for analysis (px); `0` = full res | 0–∞ | 1280 |
 
-Quality thresholds are heuristics. Calibrate them with representative images
-from the devices and environments used by your application.
+> 💡 **Tip:** Quality thresholds are heuristics. Calibrate them with representative images from your target devices and environments.
 
-## Individual checks
+---
 
-The validator can run one check at a time when a combined result is not needed:
+## 🔎 Individual Checks
+
+Run specific checks independently:
 
 ```dart
 final validator = ImageQualityValidator();
 
+// 🔍 Blur check
 final blur = validator.checkBlur(imageBytes);
-final brightness = validator.checkBrightness(imageBytes);
-final contrast = validator.checkContrast(imageBytes);
+print('Variance: ${blur.variance}, Sharp: ${!blur.isBlurry}');
 
-print(blur.variance);
-print(brightness.averageBrightness);
-print(contrast.contrastScore);
+// 💡 Brightness check
+final brightness = validator.checkBrightness(imageBytes);
+print('Level: ${brightness.level}, Avg: ${brightness.averageBrightness}');
+
+// 🎨 Contrast check
+final contrast = validator.checkContrast(imageBytes);
+print('Score: ${contrast.contrastScore}, Good: ${contrast.hasGoodContrast}');
 ```
 
-For an image already decoded with the `image` package, use
-`validateFromImage`, `checkBlurFromImage`, `checkBrightnessFromImage`, or
-`checkContrastFromImage` to avoid decoding it again.
+For images already decoded with `package:image`, use the `*FromImage` variants to avoid re-decoding:
 
-## Result data
+```dart
+final blur = validator.checkBlurFromImage(decodedImage);
+final brightness = validator.checkBrightnessFromImage(decodedImage);
+final contrast = validator.checkContrastFromImage(decodedImage);
+```
 
-`QualityResult` exposes:
+---
 
-- `isValid`: whether every quality check passed
-- `issues`: all detected quality issues
-- `errorMessage`: the first issue, or `null` when valid
-- `blurResult`: variance, confidence, threshold, and blur status
-- `brightnessResult`: average brightness, thresholds, and classification
-- `contrastResult`: contrast score, threshold, and pass status
+## 📊 Result Data
 
-## Example
+### `ImageQualityResult` (from `ImageQualityGuard`)
 
-The included Flutter example provides camera and gallery input, every preset,
-custom threshold sliders, image preview, and a focused results view. Run it
-from the package root with:
+| Property | Type | Description |
+|---|---|---|
+| `isValid` | `bool` | All checks passed |
+| `blurScore` | `double` | Laplacian variance (higher = sharper) |
+| `brightness` | `double` | Average luminance (0–255) |
+| `contrast` | `double` | Luminance standard deviation |
+| `originalWidth` / `originalHeight` | `int` | Decoded resolution |
+| `analyzedWidth` / `analyzedHeight` | `int` | Resolution fed to detectors |
+| `processingTimeMs` | `int` | Analysis time in ms |
+| `issues` | `List<String>` | Human-readable failed checks |
+| `wasDownsampled` | `bool` | Whether the image was resized |
+
+### `QualityResult` (from `ImageQualityValidator`)
+
+| Property | Type | Description |
+|---|---|---|
+| `isValid` | `bool` | All checks passed |
+| `issues` | `List<String>` | All detected issues |
+| `errorMessage` | `String?` | First issue, or `null` when valid |
+| `blurResult` | `BlurResult` | Variance, confidence, threshold, blur status |
+| `brightnessResult` | `BrightnessResult` | Average brightness, thresholds, classification |
+| `contrastResult` | `ContrastResult` | Contrast score, threshold, pass status |
+
+---
+
+## 🏗️ Architecture
+
+```
+┌──────────────────────────────────────────────────┐
+│              Your Flutter UI Isolate              │
+│                                                    │
+│  ┌──────────────────┐       ┌──────────────────┐  │
+│  │ ImageQualityGuard │──────▶│  Background Isolate │
+│  │ .analyze(bytes)   │ send  │                    │  │
+│  └──────────────────┘       │  1. Decode image    │  │
+│                             │  2. Downsample*     │  │
+│  ◀── ImageQualityResult ────│  3. Blur analysis   │  │
+│     (serializable)          │  4. Brightness check │  │
+│                             │  5. Contrast check   │  │
+│                             └──────────────────┘  │
+└──────────────────────────────────────────────────┘
+```
+*Only when image exceeds `maxAnalysisDimension` (default 1280px).
+
+---
+
+## 📱 Example App
+
+An interactive Flutter example with camera/gallery input, every preset, custom threshold sliders, image preview, and a focused results view:
 
 ```console
 cd example
 flutter run
 ```
 
-## Performance
+---
 
-Analysis is performed locally and synchronously after image decoding. Very
-large images can take noticeable time, so resize camera images or run analysis
-in an isolate when smooth UI responsiveness is critical.
+## ⚡ Performance
 
-## License
+- Analysis runs **locally** and synchronously after image decoding.
+- Very large images can take noticeable time → resize camera images or use `maxAnalysisDimension` to auto-downsample.
+- `ImageQualityGuard.analyze()` runs everything on a **background isolate**, keeping your UI smooth.
+- Images are decoded **once** and reused across all checks.
 
-This package is available under the BSD 3-Clause License. See [LICENSE](LICENSE).
+---
+
+## 🛠️ Error Handling
+
+All errors extend `ImageQualityException`:
+
+```dart
+try {
+  final result = await ImageQualityGuard.analyze(imageBytes);
+} on ImageDecodeException {
+  // ❌ Unsupported or corrupted file
+} on ImageAnalysisException {
+  // ❌ Unexpected analysis failure
+} on ImageIsolateException {
+  // ❌ Background isolate could not start
+}
+```
+
+When using `ImageQualityValidator`, decode errors are thrown as `ArgumentError` for backward compatibility.
+
+---
+
+## 📄 License
+
+BSD 3-Clause License — see [LICENSE](LICENSE).
