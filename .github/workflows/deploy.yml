@@ -6,7 +6,7 @@ on:
       - main
 
 permissions:
-  contents: read
+  contents: write
   pages: write
   id-token: write
 
@@ -35,10 +35,15 @@ jobs:
         working-directory: example
         run: flutter build web --base-href /image_quality_guard/ --release
 
-      - name: Deploy to GitHub Pages
-        uses: peaceiris/actions-gh-pages@v3
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
         with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./example/build/web
-          publish_branch: gh-pages
-          commit_message: ${{ github.event.head_commit.message }}
+          enablement: true
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: example/build/web
+
+      - name: Deploy to GitHub Pages
+        uses: actions/deploy-pages@v5
