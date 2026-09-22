@@ -1,16 +1,19 @@
-import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:image/image.dart' as img;
 
 import '../models/contrast_result.dart';
+import '../processing/luminance_extractor.dart';
+import 'contrast_detector.dart';
 
-/// Analyzes image contrast using histogram-based standard deviation.
+/// Analyzes image contrast using the standard deviation of pixel luminance.
 ///
-/// Calculates the standard deviation of pixel luminance values to determine
-/// the contrast level of an image. Images with low standard deviation have
-/// poor contrast (flat histogram), while high standard deviation indicates
-/// good contrast (wide histogram spread).
+/// Images with a low standard deviation have poor contrast (flat histogram),
+/// while a high standard deviation indicates good contrast (wide histogram
+/// spread).
+///
+/// The actual measurement is implemented by [ContrastDetector], which also runs
+/// inside the background processing isolate of `ImageQualityGuard.analyze`.
 class ContrastAnalyzer {
   /// Minimum acceptable contrast score (standard deviation).
   /// Images below this value are considered low contrast.
@@ -25,7 +28,8 @@ class ContrastAnalyzer {
 
   /// Analyzes contrast of an image from raw bytes.
   ///
-  /// Returns a [ContrastResult] containing the contrast analysis.
+  /// Decoding happens on the calling isolate. Returns a [ContrastResult]
+  /// containing the contrast analysis.
   /// Throws an [ArgumentError] if the image cannot be decoded.
   ContrastResult analyze(Uint8List imageBytes) {
     final image = img.decodeImage(imageBytes);
@@ -37,35 +41,14 @@ class ContrastAnalyzer {
 
   /// Analyzes contrast of an already decoded image.
   ///
-  /// Returns a [ContrastResult] containing the contrast analysis.
-  ContrastResult analyzeFromImage(img.Image image) {
-    final contrastScore = _calculateContrast(image);
+  /// The image is not modified. Returns a [ContrastResult] containing the
+  /// contrast analysis.
+  ContrastResult analyzeFromImage(img.Image image) => classify(
+        ContrastDetector.standardDeviationOf(LuminanceExtractor.fromImage(image)),
+      );
 
-    return ContrastResult(
-      hasGoodContrast: contrastScore >= minContrast,
-      contrastScore: contrastScore,
-      threshold: minContrast,
-    );
-  }
-
-  /// Calculates the contrast score using standard deviation of luminance.
-  double _calculateContrast(img.Image image) {
-    var count = 0;
-    var mean = 0.0;
-    var sumSquaredDifference = 0.0;
-
-    for (var y = 0; y < image.height; y++) {
-      for (var x = 0; x < image.width; x++) {
-        final pixel = image.getPixel(x, y);
-        final luminance = img.getLuminance(pixel).toDouble();
-        count++;
-        final difference = luminance - mean;
-        mean += difference / count;
-        final adjustedDifference = luminance - mean;
-        sumSquaredDifference += difference * adjustedDifference;
-      }
-    }
-
-    return count == 0 ? 0 : math.sqrt(sumSquaredDifference / count);
-  }
+  /// Classifies an already measured [contrastScore].
+  ContrastResult classify(double contrastScore) =>
+      ContrastDetector(minContrast: minContrast).classify(contrastScore);
 }
+

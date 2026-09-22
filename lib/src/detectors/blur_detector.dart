@@ -4,6 +4,8 @@ import 'dart:typed_data';
 import 'package:image/image.dart' as img;
 
 import '../models/blur_result.dart';
+import '../processing/luminance_extractor.dart';
+import '../processing/luminance_statistics.dart';
 
 /// Detects blur in images using the Laplacian variance method.
 ///
@@ -11,6 +13,10 @@ import '../models/blur_result.dart';
 /// to detect edges in the image, then calculating the variance of the
 /// result. Sharp images have high variance (many strong edges), while
 /// blurry images have low variance (edges are smoothed out).
+///
+/// The calculation itself only needs a flat luminance buffer, which is why
+/// [measure] and [laplacianVariance] can run inside the background processing
+/// isolate without any `package:image` object.
 class BlurDetector {
   /// The threshold below which an image is considered blurry.
   /// Higher values require sharper images.
@@ -25,6 +31,10 @@ class BlurDetector {
 
   /// Detects blur in an image from raw bytes.
   ///
+  /// Decoding happens on the calling isolate; prefer `ImageQualityGuard.analyze`
+  /// when the image is large, because that entry point decodes and analyzes the
+  /// image on a background isolate.
+  ///
   /// Returns a [BlurResult] containing the blur detection result.
   /// Throws an [ArgumentError] if the image cannot be decoded.
   BlurResult detect(Uint8List imageBytes) {
@@ -37,56 +47,70 @@ class BlurDetector {
 
   /// Detects blur in an already decoded image.
   ///
-  /// Returns a [BlurResult] containing the blur detection result.
-  BlurResult detectFromImage(img.Image image) {
-    // Convert to grayscale for edge detection
-    final grayscale = img.grayscale(image);
+  /// The image is not modified. Returns a [BlurResult] containing the blur
+  /// detection result.
+  BlurResult detectFromImage(img.Image image) => measure(
+        LuminanceExtractor.fromImage(image),
+        width: image.width,
+        height: image.height,
+      );
 
-    final variance = _calculateLaplacianVariance(grayscale);
+  /// Detects blur from a flat luminance buffer.
+  ///
+  /// [luminance] holds one sample per pixel, row major, and must describe a
+  /// [width] x [height] image.
+  BlurResult measure(
+    Uint8List luminance, {
+    required int width,
+    required int height,
+  }) =>
+      classify(laplacianVariance(luminance, width: width, height: height));
 
-    // Calculate confidence based on how far the variance is from threshold
-    final confidence = _calculateConfidence(variance);
+  /// Classifies an already calculated Laplacian [variance].
+  ///
+  /// Useful when the variance was produced by the processing isolate: the
+  /// statistic is a plain [double], so the result object can be rebuilt on the
+  /// main isolate without touching pixels again.
+  BlurResult classify(double variance) => BlurResult(
+        isBlurry: variance < threshold,
+        variance: variance,
+        confidence: _calculateConfidence(variance),
+        threshold: threshold,
+      );
 
-    return BlurResult(
-      isBlurry: variance < threshold,
-      variance: variance,
-      confidence: confidence,
-      threshold: threshold,
-    );
-  }
+  /// Calculates the variance of the Laplacian response of [luminance].
+  ///
+  /// The 4-neighbour Laplacian (`4 * center - up - down - left - right`) is
+  /// evaluated per pixel and folded into a running variance with Welford's
+  /// algorithm. No per-pixel list of Laplacian values is materialised, so the
+  /// peak memory of the blur detector is the luminance buffer itself.
+  ///
+  /// Border pixels are skipped because their neighbourhood is incomplete.
+  static double laplacianVariance(
+    Uint8List luminance, {
+    required int width,
+    required int height,
+  }) {
+    if (width < 3 || height < 3 || luminance.length < width * height) {
+      // Not enough pixels left after skipping the border.
+      return 0;
+    }
 
-  /// Calculates Laplacian variance without retaining a value per pixel.
-  double _calculateLaplacianVariance(img.Image grayscale) {
-    final width = grayscale.width;
-    final height = grayscale.height;
-    const kernel = [0, 1, 0, 1, -4, 1, 0, 1, 0];
-    var count = 0;
-    var mean = 0.0;
-    var sumSquaredDifference = 0.0;
-
+    final statistics = RunningStatistics();
     for (var y = 1; y < height - 1; y++) {
+      final rowStart = y * width;
       for (var x = 1; x < width - 1; x++) {
-        var sum = 0.0;
-        var kernelIndex = 0;
-
-        for (var ky = -1; ky <= 1; ky++) {
-          for (var kx = -1; kx <= 1; kx++) {
-            final pixel = grayscale.getPixel(x + kx, y + ky);
-            final luminance = img.getLuminance(pixel);
-            sum += luminance * kernel[kernelIndex];
-            kernelIndex++;
-          }
-        }
-
-        count++;
-        final difference = sum - mean;
-        mean += difference / count;
-        final adjustedDifference = sum - mean;
-        sumSquaredDifference += difference * adjustedDifference;
+        final index = rowStart + x;
+        final response = 4.0 * luminance[index] -
+            luminance[index - 1] -
+            luminance[index + 1] -
+            luminance[index - width] -
+            luminance[index + width];
+        statistics.add(response);
       }
     }
 
-    return count == 0 ? 0 : sumSquaredDifference / count;
+    return statistics.variance;
   }
 
   /// Calculates confidence based on distance from threshold.

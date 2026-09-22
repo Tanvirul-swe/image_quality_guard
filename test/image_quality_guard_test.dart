@@ -2,6 +2,9 @@ import 'dart:typed_data';
 
 import 'package:image/image.dart' as img;
 import 'package:image_quality_guard/image_quality_guard.dart';
+// White box import: the luminance buffer is the isolate safe pixel format that
+// the background processing pipeline works with.
+import 'package:image_quality_guard/src/processing/luminance_extractor.dart';
 import 'package:test/test.dart';
 
 void main() {
@@ -144,6 +147,125 @@ void main() {
 
       expect(result.contrastResult.hasGoodContrast, isFalse);
       expect(result.isValid, isFalse);
+    });
+  });
+
+  group('Isolate safe detector math', () {
+    test('measures a flat luminance buffer', () {
+      final luminance = Uint8List.fromList(List<int>.filled(16 * 16, 128));
+
+      expect(BrightnessDetector.averageOf(luminance), 128);
+      expect(ContrastDetector.standardDeviationOf(luminance), 0);
+      expect(
+        BlurDetector.laplacianVariance(luminance, width: 16, height: 16),
+        0,
+      );
+    });
+
+    test('measures brightness and contrast of a high frequency buffer', () {
+      final luminance = Uint8List(16 * 16);
+      for (var index = 0; index < luminance.length; index++) {
+        luminance[index] = index.isEven ? 0 : 255;
+      }
+
+      expect(BrightnessDetector.averageOf(luminance), closeTo(127.5, 0.01));
+      expect(ContrastDetector.standardDeviationOf(luminance), closeTo(127.5, 0.01));
+      expect(
+        BlurDetector.laplacianVariance(luminance, width: 16, height: 16),
+        greaterThan(0),
+      );
+    });
+
+    test('classifies precomputed metrics without touching pixels', () {
+      expect(const BlurDetector(threshold: 100).classify(50).isBlurry, isTrue);
+      expect(const BlurDetector(threshold: 100).classify(150).isBlurry, isFalse);
+      expect(
+        const BrightnessDetector().classify(10).level,
+        BrightnessLevel.tooDark,
+      );
+      expect(
+        const BrightnessDetector().classify(128).level,
+        BrightnessLevel.optimal,
+      );
+      expect(
+        const BrightnessDetector().classify(250).level,
+        BrightnessLevel.tooBright,
+      );
+      expect(const ContrastDetector().classify(20).hasGoodContrast, isFalse);
+      expect(const ContrastDetector().classify(80).hasGoodContrast, isTrue);
+    });
+
+    test('returns a zero variance when there is no interior pixel', () {
+      expect(BlurDetector.laplacianVariance(Uint8List(4), width: 2, height: 2), 0);
+      expect(BlurDetector.laplacianVariance(Uint8List(0), width: 0, height: 0), 0);
+    });
+
+    test('matches the image based detectors on the same pixels', () {
+      final image = _checkerboardImage();
+
+      // White box import: the luminance buffer is the format that the background
+      // isolate works with.
+      final luminance = LuminanceExtractor.fromImage(image);
+
+      expect(
+        BrightnessDetector.averageOf(luminance),
+        const BrightnessAnalyzer().analyzeFromImage(image).averageBrightness,
+      );
+      expect(
+        ContrastDetector.standardDeviationOf(luminance),
+        const ContrastAnalyzer().analyzeFromImage(image).contrastScore,
+      );
+      expect(
+        BlurDetector.laplacianVariance(luminance, width: 16, height: 16),
+        const BlurDetector().detectFromImage(image).variance,
+      );
+    });
+  });
+
+  group('ImageQualityValidator backwards compatibility', () {
+    test('accepts an optional analysis dimension', () async {
+      final bytes = Uint8List.fromList(img.encodePng(_checkerboardImage()));
+
+      final fullResolution = ImageQualityValidator();
+      final downsampled = ImageQualityValidator(maxAnalysisDimension: 4);
+
+      expect(fullResolution.imageConfig.maxAnalysisDimension, 0);
+      expect(downsampled.imageConfig.maxAnalysisDimension, 4);
+
+      // Area averaging turns the 1 pixel checkerboard into flat grey.
+      expect(downsampled.checkBlur(bytes).variance, 0);
+      expect(
+        fullResolution.checkBlur(bytes).variance,
+        greaterThan(downsampled.checkBlur(bytes).variance),
+      );
+    });
+
+    test('does not modify the decoded image', () async {
+      final image = _checkerboardImage();
+      final before = img.encodePng(image);
+
+      await ImageQualityValidator().validateFromImage(image);
+
+      expect(img.encodePng(image), before);
+    });
+
+    test('reports the same metrics through every entry point', () async {
+      final image = _checkerboardImage();
+      final bytes = Uint8List.fromList(img.encodePng(image));
+      final validator = ImageQualityValidator();
+
+      final fromBytes = await validator.validate(bytes);
+      final fromImage = await validator.validateFromImage(image);
+
+      expect(fromBytes.blurResult, fromImage.blurResult);
+      expect(fromBytes.brightnessResult, fromImage.brightnessResult);
+      expect(fromBytes.contrastResult, fromImage.contrastResult);
+      expect(validator.checkBlur(bytes), fromImage.blurResult);
+      expect(validator.checkBrightness(bytes), fromImage.brightnessResult);
+      expect(validator.checkContrast(bytes), fromImage.contrastResult);
+      expect(validator.checkBlurFromImage(image), fromImage.blurResult);
+      expect(validator.checkBrightnessFromImage(image), fromImage.brightnessResult);
+      expect(validator.checkContrastFromImage(image), fromImage.contrastResult);
     });
   });
 }

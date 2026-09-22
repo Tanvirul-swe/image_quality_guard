@@ -75,43 +75,49 @@ class _QualityGuardPageState extends State<QualityGuardPage> {
       name: 'Default',
       description: 'Balanced checks for everyday images',
       icon: Icons.auto_awesome_outlined,
-      config: QualityConfig(),
+      config: ImageQualityConfig.mobile,
     ),
     QualityProfile(
       name: 'Card scan',
       description: 'IDs, bank cards, and licenses',
       icon: Icons.credit_card_outlined,
-      config: QualityConfig.cardScanning,
+      config: ImageQualityConfig.cardScanning,
     ),
     QualityProfile(
       name: 'Document',
       description: 'Forms, receipts, and printed text',
       icon: Icons.description_outlined,
-      config: QualityConfig.documentScanning,
+      config: ImageQualityConfig.documentScanning,
     ),
     QualityProfile(
       name: 'Photo',
       description: 'High-quality photo capture',
       icon: Icons.photo_camera_outlined,
-      config: QualityConfig.photoCapture,
+      config: ImageQualityConfig.photoCapture,
     ),
     QualityProfile(
       name: 'Relaxed',
       description: 'More forgiving quality limits',
       icon: Icons.sentiment_satisfied_alt_outlined,
-      config: QualityConfig.relaxed,
+      config: ImageQualityConfig.relaxed,
     ),
     QualityProfile(
       name: 'Strict',
       description: 'Higher quality requirements',
       icon: Icons.verified_outlined,
-      config: QualityConfig.strict,
+      config: ImageQualityConfig.strict,
+    ),
+    QualityProfile(
+      name: 'Full resolution',
+      description: 'Slowest, analyzes every pixel',
+      icon: Icons.high_quality_outlined,
+      config: ImageQualityConfig.fullResolution,
     ),
     QualityProfile(
       name: 'Custom',
       description: 'Set your own minimum quality thresholds',
       icon: Icons.tune,
-      config: QualityConfig(),
+      config: ImageQualityConfig.mobile,
       isCustom: true,
     ),
   ];
@@ -120,7 +126,7 @@ class _QualityGuardPageState extends State<QualityGuardPage> {
 
   Uint8List? _imageBytes;
   String? _fileName;
-  QualityResult? _result;
+  ImageQualityResult? _result;
   int _profileIndex = 0;
   double _customSharpness = 100;
   double _customBrightness = 40;
@@ -131,9 +137,9 @@ class _QualityGuardPageState extends State<QualityGuardPage> {
 
   QualityProfile get _profile => _profiles[_profileIndex];
 
-  QualityConfig get _activeConfig {
+  ImageQualityConfig get _activeConfig {
     if (!_profile.isCustom) return _profile.config;
-    return QualityConfig(
+    return ImageQualityConfig(
       blurThreshold: _customSharpness,
       minBrightness: _customBrightness,
       minContrast: _customContrast,
@@ -189,6 +195,12 @@ class _QualityGuardPageState extends State<QualityGuardPage> {
     return error.message ?? 'Could not open the image picker.';
   }
 
+  /// Starts a background isolate analysis and keeps the UI responsive.
+  ///
+  /// No isolate is created here: [ImageQualityGuard.analyze] handles the
+  /// payload, the isolate and the result reconstruction internally. The
+  /// `await` therefore never blocks the Flutter event loop, which is what the
+  /// frame counter in [_ResponsivenessProbe] demonstrates.
   Future<void> _analyze() async {
     final bytes = _imageBytes;
     if (bytes == null || _isAnalyzing) return;
@@ -200,16 +212,23 @@ class _QualityGuardPageState extends State<QualityGuardPage> {
     });
 
     try {
-      final validator = ImageQualityValidator(config: _activeConfig);
-      final result = await validator.validate(bytes);
+      final result = await ImageQualityGuard.analyze(
+        bytes,
+        config: _activeConfig,
+      );
       if (!mounted) return;
       setState(() {
         _result = result;
       });
-    } on ArgumentError {
+    } on ImageDecodeException {
       if (!mounted) return;
       setState(() {
         _errorMessage = 'This file is not a supported image.';
+      });
+    } on ImageQualityException catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _errorMessage = error.message;
       });
     } on Object catch (_) {
       if (!mounted) return;
@@ -551,7 +570,7 @@ class _ActionPanel extends StatelessWidget {
   final int profileIndex;
   final bool hasImage;
   final bool isAnalyzing;
-  final QualityResult? result;
+  final ImageQualityResult? result;
   final String? errorMessage;
   final double customSharpness;
   final double customBrightness;
@@ -650,6 +669,10 @@ class _ActionPanel extends StatelessWidget {
                   : const Icon(Icons.auto_fix_high_outlined),
               label: Text(isAnalyzing ? 'Analyzing...' : 'Analyze image'),
             ),
+            if (isAnalyzing) ...[
+              const SizedBox(height: 14),
+              const _ResponsivenessProbe(),
+            ],
             if (errorMessage != null) ...[
               const SizedBox(height: 16),
               _ErrorNotice(message: errorMessage!),
@@ -768,10 +791,89 @@ class _WaitingState extends StatelessWidget {
   }
 }
 
+/// Proves that the UI isolate keeps rendering while the analysis runs.
+///
+/// The widget runs a repeating animation and counts the frames the framework
+/// actually renders. A blocked UI isolate would stop the counter, because no
+/// further frames would be scheduled.
+class _ResponsivenessProbe extends StatefulWidget {
+  const _ResponsivenessProbe();
+
+  @override
+  State<_ResponsivenessProbe> createState() => _ResponsivenessProbeState();
+}
+
+class _ResponsivenessProbeState extends State<_ResponsivenessProbe>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 900),
+  )..repeat();
+
+  var _frames = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback(_countFrame);
+  }
+
+  void _countFrame(Duration _) {
+    if (!mounted) return;
+    // The repeating controller keeps scheduling frames, so this callback runs
+    // once per rendered frame. No setState is needed: the AnimatedBuilder below
+    // rebuilds on every frame of the controller anyway.
+    _frames++;
+    WidgetsBinding.instance.addPostFrameCallback(_countFrame);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, _) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        decoration: BoxDecoration(
+          color: const Color(0xFFEAF0EE),
+          borderRadius: BorderRadius.circular(6),
+        ),
+        child: Row(
+          children: [
+            RotationTransition(
+              turns: _controller,
+              child: const Icon(
+                Icons.sync,
+                size: 20,
+                color: Color(0xFF176B5B),
+              ),
+            ),
+            const SizedBox(width: 11),
+            Expanded(
+              child: Text(
+                'Analyzing on a background isolate - $_frames UI frames rendered',
+                style: const TextStyle(
+                  color: Color(0xFF30423D),
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _ResultView extends StatelessWidget {
   const _ResultView({required this.result});
 
-  final QualityResult result;
+  final ImageQualityResult result;
 
   @override
   Widget build(BuildContext context) {
@@ -832,45 +934,98 @@ class _ResultView extends StatelessWidget {
         const SizedBox(height: 8),
         _CheckRow(
           icon: Icons.center_focus_strong_outlined,
-          label: 'Sharpness',
-          value: result.blurResult.variance.toStringAsFixed(1),
-          passed: !result.blurResult.isBlurry,
+          label: 'Sharpness (Laplacian variance)',
+          value: result.blurScore.toStringAsFixed(1),
+          passed: !result.isBlurry,
         ),
         const Divider(height: 1),
         _CheckRow(
           icon: Icons.light_mode_outlined,
           label: 'Brightness',
-          value: result.brightnessResult.averageBrightness.toStringAsFixed(1),
-          passed: result.brightnessResult.isOptimal,
+          value: result.brightness.toStringAsFixed(1),
+          passed: result.isBrightnessOptimal,
         ),
         const Divider(height: 1),
         _CheckRow(
           icon: Icons.contrast_outlined,
           label: 'Contrast',
-          value: result.contrastResult.contrastScore.toStringAsFixed(1),
-          passed: result.contrastResult.hasGoodContrast,
+          value: result.contrast.toStringAsFixed(1),
+          passed: result.hasGoodContrast,
+        ),
+        const SizedBox(height: 18),
+        const Text(
+          'Processing',
+          style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+        ),
+        const SizedBox(height: 6),
+        _MetadataRow(
+          label: 'Original resolution',
+          value: '${result.originalWidth} x ${result.originalHeight}',
+        ),
+        _MetadataRow(
+          label: 'Analyzed resolution',
+          value: '${result.analyzedWidth} x ${result.analyzedHeight}'
+              '${result.wasDownsampled ? '  (downsampled)' : ''}',
+        ),
+        _MetadataRow(
+          label: 'Processing time',
+          value: '${result.processingTimeMs} ms',
+        ),
+        _MetadataRow(
+          label: 'Run on',
+          value: 'Background isolate',
         ),
       ],
     );
   }
 
-  String _friendlyIssues(QualityResult value) {
+  String _friendlyIssues(ImageQualityResult value) {
     final issues = <String>[];
-    if (value.blurResult.isBlurry) issues.add('Hold the camera steady');
-    if (!value.brightnessResult.isOptimal) {
-      switch (value.brightnessResult.level) {
-        case BrightnessLevel.tooDark:
-          issues.add('Use more light');
-        case BrightnessLevel.tooBright:
-          issues.add('Reduce glare or light');
-        case BrightnessLevel.optimal:
-          break;
-      }
+    if (value.isBlurry) issues.add('Hold the camera steady');
+    switch (value.brightnessLevel) {
+      case BrightnessLevel.tooDark:
+        issues.add('Use more light');
+      case BrightnessLevel.tooBright:
+        issues.add('Reduce glare or light');
+      case BrightnessLevel.optimal:
+        break;
     }
-    if (!value.contrastResult.hasGoodContrast) {
+    if (!value.hasGoodContrast) {
       issues.add('Use a clearer background');
     }
     return issues.join(' | ');
+  }
+}
+
+class _MetadataRow extends StatelessWidget {
+  const _MetadataRow({required this.label, required this.value});
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 34,
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              label,
+              style: const TextStyle(color: Color(0xFF53625E)),
+            ),
+          ),
+          Text(
+            value,
+            style: const TextStyle(
+              color: Color(0xFF30423D),
+              fontWeight: FontWeight.w600,
+              fontFeatures: [FontFeature.tabularFigures()],
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
 
@@ -959,6 +1114,6 @@ class QualityProfile {
   final String name;
   final String description;
   final IconData icon;
-  final QualityConfig config;
+  final ImageQualityConfig config;
   final bool isCustom;
 }
