@@ -120,6 +120,12 @@ class _QualityGuardPageState extends State<QualityGuardPage> {
       config: ImageQualityConfig.mobile,
       isCustom: true,
     ),
+    QualityProfile(
+      name: 'NID Capture',
+      description: 'Farmer NID and identity document capture',
+      icon: Icons.badge_outlined,
+      config: ImageQualityConfig.nidCapture,
+    ),
   ];
 
   final ImagePicker _picker = ImagePicker();
@@ -935,7 +941,7 @@ class _ResultView extends StatelessWidget {
         _CheckRow(
           icon: Icons.center_focus_strong_outlined,
           label: 'Sharpness (Laplacian variance)',
-          value: result.blurScore.toStringAsFixed(1),
+          value: result.sharpnessScore.toStringAsFixed(1),
           passed: !result.isBlurry,
         ),
         const Divider(height: 1),

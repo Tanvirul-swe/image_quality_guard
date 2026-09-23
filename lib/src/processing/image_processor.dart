@@ -2,9 +2,10 @@ import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:image/image.dart' as img;
+import 'package:image_quality_guard/src/detectors/sharpness_detector.dart';
+import 'package:image_quality_guard/src/models/sharpness_result.dart';
 
 import '../config/image_quality_config.dart';
-import '../detectors/blur_detector.dart';
 import '../detectors/brightness_detector.dart';
 import '../detectors/contrast_detector.dart';
 import '../models/image_quality_exception.dart';
@@ -56,27 +57,17 @@ class PreparedImage {
 
 /// Metrics produced by a single analysis pass over a [PreparedImage].
 class ImageAnalysisMetrics {
-  /// Creates a metrics container.
   const ImageAnalysisMetrics({
-    required this.blurVariance,
+    required this.sharpness,
     required this.brightness,
     required this.contrast,
   });
 
-  /// Laplacian variance of the analyzed luminance buffer.
-  final double blurVariance;
+  final SharpnessResult sharpness;
 
-  /// Average luminance (0-255 scale).
   final double brightness;
 
-  /// Standard deviation of the luminance (contrast score).
   final double contrast;
-
-  @override
-  String toString() => 'ImageAnalysisMetrics(blurVariance: '
-      '${blurVariance.toStringAsFixed(2)}, '
-      'brightness: ${brightness.toStringAsFixed(2)}, '
-      'contrast: ${contrast.toStringAsFixed(2)})';
 }
 
 /// Runs every CPU heavy step of the image quality check.
@@ -188,16 +179,32 @@ abstract final class ImageProcessor {
   /// allocates a value per pixel, so memory use stays proportional to the
   /// luminance buffer itself. New CPU intensive metrics only need to be added
   /// here to run inside the background isolate as well.
-  static ImageAnalysisMetrics analyze(PreparedImage prepared) {
-    final statistics = summarizeLuminance(prepared.luminance);
+  static ImageAnalysisMetrics analyze(
+    PreparedImage prepared, {
+    required ImageQualityConfig config,
+  }) {
+    final luminanceStatistics = summarizeLuminance(
+      prepared.luminance,
+    );
+
+    final sharpness = SharpnessDetector.analyze(
+      prepared.luminance,
+      width: prepared.width,
+      height: prepared.height,
+      blurThreshold: config.blurThreshold,
+      denoise: config.denoiseBeforeSharpness,
+      tileRows: config.tileRows,
+      tileColumns: config.tileColumns,
+      minTileContrast: config.minTileContrast,
+      minInformativeTiles: config.minInformativeTiles,
+      minSharpTileRatio: config.minSharpTileRatio,
+      minTenengradScore: config.minTenengradScore,
+    );
+
     return ImageAnalysisMetrics(
-      blurVariance: BlurDetector.laplacianVariance(
-        prepared.luminance,
-        width: prepared.width,
-        height: prepared.height,
-      ),
-      brightness: statistics.mean,
-      contrast: statistics.standardDeviation,
+      sharpness: sharpness,
+      brightness: luminanceStatistics.mean,
+      contrast: luminanceStatistics.standardDeviation,
     );
   }
 
@@ -214,7 +221,7 @@ abstract final class ImageProcessor {
       imageBytes,
       maxAnalysisDimension: config.maxAnalysisDimension,
     );
-    final metrics = analyze(prepared);
+    final metrics = analyze(prepared, config: config);
     stopwatch.stop();
     return buildResult(
       prepared: prepared,
@@ -234,7 +241,7 @@ abstract final class ImageProcessor {
       image,
       maxAnalysisDimension: config.maxAnalysisDimension,
     );
-    final metrics = analyze(prepared);
+    final metrics = analyze(prepared, config: config);
     stopwatch.stop();
     return buildResult(
       prepared: prepared,
@@ -246,33 +253,63 @@ abstract final class ImageProcessor {
 
   /// Combines the measured [metrics] with the processing metadata and the
   /// thresholds of [config] into a serializable [ImageQualityResult].
+
   static ImageQualityResult buildResult({
     required PreparedImage prepared,
     required ImageAnalysisMetrics metrics,
     required ImageQualityConfig config,
     required int processingTimeMs,
   }) {
-    final blurResult =
-        BlurDetector(threshold: config.blurThreshold).classify(metrics.blurVariance);
     final brightnessResult = BrightnessDetector(
       minBrightness: config.minBrightness,
       maxBrightness: config.maxBrightness,
-    ).classify(metrics.brightness);
-    final contrastResult =
-        ContrastDetector(minContrast: config.minContrast).classify(metrics.contrast);
+    ).classify(
+      metrics.brightness,
+    );
+
+    final contrastResult = ContrastDetector(
+      minContrast: config.minContrast,
+    ).classify(
+      metrics.contrast,
+    );
 
     return ImageQualityResult(
-      isValid: !blurResult.isBlurry &&
+      isValid: !metrics.sharpness.isBlurry &&
           brightnessResult.isOptimal &&
           contrastResult.hasGoodContrast,
-      blurScore: metrics.blurVariance,
+
+      // Old/raw Laplacian score
+      blurScore: metrics.sharpness.rawLaplacianVariance,
+
+      // New robust score
+      sharpnessScore: metrics.sharpness.sharpnessScore,
+
+      denoisedLaplacian: metrics.sharpness.denoisedLaplacianVariance,
+
+      tenengradScore: metrics.sharpness.tenengradScore,
+
+      lowTileSharpness: metrics.sharpness.lowTileSharpness,
+
+      sharpTileRatio: metrics.sharpness.sharpTileRatio,
+
+      informativeTileCount: metrics.sharpness.informativeTileCount,
+
+      totalTileCount: metrics.sharpness.totalTileCount,
+
       brightness: metrics.brightness,
+
       contrast: metrics.contrast,
+
       originalWidth: prepared.originalWidth,
+
       originalHeight: prepared.originalHeight,
+
       analyzedWidth: prepared.width,
+
       analyzedHeight: prepared.height,
+
       processingTimeMs: processingTimeMs,
+
       config: config,
     );
   }

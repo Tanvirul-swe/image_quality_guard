@@ -45,7 +45,7 @@
 ///
 /// ```dart
 /// final validator = ImageQualityValidator(
-///   config: QualityConfig.cardScanning,
+///   config: ImageQualityConfig.cardScanning,
 /// );
 /// final result = await validator.validate(imageBytes);
 /// ```

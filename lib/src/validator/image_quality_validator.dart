@@ -3,7 +3,6 @@ import 'dart:typed_data';
 import 'package:image/image.dart' as img;
 
 import '../config/image_quality_config.dart';
-import '../config/quality_config.dart';
 import '../detectors/blur_detector.dart';
 import '../detectors/brightness_detector.dart';
 import '../detectors/contrast_detector.dart';
@@ -40,7 +39,7 @@ import '../processing/isolate_processor.dart';
 /// ```
 class ImageQualityValidator {
   /// The configuration for quality thresholds.
-  final QualityConfig config;
+  final ImageQualityConfig config;
 
   /// Longest side, in pixels, used while analyzing.
   ///
@@ -68,7 +67,7 @@ class ImageQualityValidator {
   ///
   /// If no [config] is provided, default thresholds are used.
   ImageQualityValidator({
-    this.config = const QualityConfig(),
+    this.config = const ImageQualityConfig(),
     this.maxAnalysisDimension = 0,
   });
 

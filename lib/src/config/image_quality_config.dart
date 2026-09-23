@@ -1,149 +1,155 @@
-import 'quality_config.dart';
-
-/// Configuration for the background image quality analysis.
-///
-/// In addition to the quality thresholds of [QualityConfig], this class holds
-/// the resolution ceiling used by the processing isolate:
-///
-/// * [maxAnalysisDimension] is the longest side, in pixels, that is fed to the
-///   analyzers. Larger images are downsampled with area averaging while the
-///   aspect ratio is preserved, and smaller images are never upscaled.
-/// * A value of `0` disables downsampling and analyzes the full resolution.
-///
-/// Thresholds are evaluated at the *analyzed* resolution. The Laplacian
-/// variance used for blur detection scales with image size, so calibrate
-/// [blurThreshold] against the [maxAnalysisDimension] you ship with. Images
-/// smaller than [maxAnalysisDimension] are analyzed at their own resolution and
-/// therefore keep the resolution their thresholds were tuned for.
-///
-/// ```dart
-/// final result = await ImageQualityGuard.analyze(
-///   imageBytes,
-///   config: const ImageQualityConfig(maxAnalysisDimension: 1280),
-/// );
-/// ```
 class ImageQualityConfig {
-  /// Creates a configuration with the given thresholds and resolution ceiling.
-  ///
-  /// The defaults match [QualityConfig] and analyze images at up to
-  /// [defaultMaxAnalysisDimension] pixels on the longest side, which is a good
-  /// balance between speed and enough detail for blur detection.
   const ImageQualityConfig({
     this.blurThreshold = 100.0,
     this.minBrightness = 40.0,
     this.maxBrightness = 220.0,
     this.minContrast = 50.0,
     this.maxAnalysisDimension = defaultMaxAnalysisDimension,
-  })  : assert(blurThreshold > 0, 'blurThreshold must be positive'),
-        assert(minBrightness >= 0 && minBrightness <= 255,
-            'minBrightness must be between 0 and 255'),
-        assert(maxBrightness >= 0 && maxBrightness <= 255,
-            'maxBrightness must be between 0 and 255'),
-        assert(minBrightness < maxBrightness,
-            'minBrightness must be less than maxBrightness'),
-        assert(minContrast >= 0, 'minContrast must be non-negative'),
-        assert(maxAnalysisDimension >= 0,
-            'maxAnalysisDimension must be non-negative, use 0 to disable '
-            'downsampling');
 
-  /// Longest side, in pixels, used for the analysis of large images.
-  ///
-  /// 1280 keeps enough detail for Laplacian based blur detection while cutting
-  /// the analyzed pixel count of a 12 MP camera photo by roughly 90%.
+    // New sharpness settings
+    this.denoiseBeforeSharpness = true,
+    this.tileRows = 4,
+    this.tileColumns = 4,
+    this.minTileContrast = 8.0,
+    this.minInformativeTiles = 4,
+    this.minSharpTileRatio = 0.50,
+    this.minTenengradScore = 0.0,
+  })  : assert(blurThreshold > 0),
+        assert(minBrightness >= 0 && minBrightness <= 255),
+        assert(maxBrightness >= 0 && maxBrightness <= 255),
+        assert(minBrightness < maxBrightness),
+        assert(minContrast >= 0),
+        assert(maxAnalysisDimension >= 0),
+        assert(tileRows > 0),
+        assert(tileColumns > 0),
+        assert(minTileContrast >= 0),
+        assert(minInformativeTiles >= 0),
+        assert(
+          minSharpTileRatio >= 0 && minSharpTileRatio <= 1,
+        ),
+        assert(minTenengradScore >= 0);
+
   static const int defaultMaxAnalysisDimension = 1280;
 
-  /// Threshold for blur detection using Laplacian variance.
-  /// Higher values require sharper images.
   final double blurThreshold;
 
-  /// Minimum acceptable brightness value (0-255 scale).
   final double minBrightness;
 
-  /// Maximum acceptable brightness value (0-255 scale).
   final double maxBrightness;
 
-  /// Minimum acceptable contrast score (standard deviation of luminance).
   final double minContrast;
 
-  /// Longest side, in pixels, used while analyzing. `0` disables downsampling.
   final int maxAnalysisDimension;
 
-  /// Whether images larger than [maxAnalysisDimension] are downsampled.
+  /// Apply 3×3 Gaussian smoothing before measuring sharpness.
+  final bool denoiseBeforeSharpness;
+
+  final int tileRows;
+
+  final int tileColumns;
+
+  /// Tiles below this local contrast are ignored.
+  final double minTileContrast;
+
+  /// Minimum number of useful tiles required before tile statistics
+  /// replace the global Laplacian score.
+  final int minInformativeTiles;
+
+  /// Minimum fraction of informative tiles that must pass blurThreshold.
+  final double minSharpTileRatio;
+
+  /// Optional secondary Sobel/Tenengrad gate.
+  ///
+  /// 0 disables this gate.
+  final double minTenengradScore;
+
   bool get downscalesLargeImages => maxAnalysisDimension > 0;
 
-  /// Recommended defaults for camera images on mobile devices.
   static const ImageQualityConfig mobile = ImageQualityConfig();
 
-  /// Analyzes the full resolution, matching the pre-isolate behaviour of
-  /// [QualityConfig]. Slower for large photos, but the metrics are identical to
-  /// the ones produced by earlier versions.
-  static const ImageQualityConfig fullResolution =
-      ImageQualityConfig(maxAnalysisDimension: 0);
+  static const ImageQualityConfig fullResolution = ImageQualityConfig(
+    maxAnalysisDimension: 0,
+  );
 
-  /// Preset configuration optimized for card scanning (ID cards, credit cards).
   static const ImageQualityConfig cardScanning = ImageQualityConfig(
-    blurThreshold: 80.0,
-    minBrightness: 35.0,
-    maxBrightness: 230.0,
-    minContrast: 40.0,
+    blurThreshold: 80,
+    minBrightness: 35,
+    maxBrightness: 230,
+    minContrast: 40,
+    minSharpTileRatio: 0.50,
   );
 
-  /// Preset configuration optimized for document scanning.
   static const ImageQualityConfig documentScanning = ImageQualityConfig(
-    blurThreshold: 120.0,
-    minBrightness: 45.0,
-    maxBrightness: 215.0,
-    minContrast: 55.0,
+    blurThreshold: 120,
+    minBrightness: 45,
+    maxBrightness: 215,
+    minContrast: 55,
+    minSharpTileRatio: 0.55,
   );
 
-  /// Preset configuration optimized for photo capture.
-  static const ImageQualityConfig photoCapture = ImageQualityConfig(
-    blurThreshold: 200.0,
-    minBrightness: 30.0,
-    maxBrightness: 235.0,
-    minContrast: 45.0,
-  );
-
-  /// Preset configuration with relaxed thresholds.
-  static const ImageQualityConfig relaxed = ImageQualityConfig(
-    blurThreshold: 50.0,
-    minBrightness: 25.0,
-    maxBrightness: 240.0,
-    minContrast: 30.0,
-  );
-
-  /// Preset configuration with strict thresholds.
-  static const ImageQualityConfig strict = ImageQualityConfig(
-    blurThreshold: 250.0,
-    minBrightness: 50.0,
-    maxBrightness: 200.0,
-    minContrast: 65.0,
-  );
-
-  /// Bridges a legacy [QualityConfig] into this configuration.
+  /// Starting preset for NID / ID-card capture.
   ///
-  /// The thresholds are copied as is, [maxAnalysisDimension] can be provided to
-  /// opt into (or out of) downsampling.
-  factory ImageQualityConfig.fromQualityConfig(
-    QualityConfig config, {
-    int maxAnalysisDimension = defaultMaxAnalysisDimension,
-  }) {
-    return ImageQualityConfig(
-      blurThreshold: config.blurThreshold,
-      minBrightness: config.minBrightness,
-      maxBrightness: config.maxBrightness,
-      minContrast: config.minContrast,
-      maxAnalysisDimension: maxAnalysisDimension,
-    );
-  }
+  /// These values MUST still be calibrated using your real device images.
+  static const ImageQualityConfig nidCapture = ImageQualityConfig(
+    blurThreshold: 80, // calibrate with real NIDs
+    minBrightness: 55,
+    maxBrightness: 225,
+    minContrast: 25,
 
-  /// Creates a copy of this config with the given fields replaced.
+    denoiseBeforeSharpness: true,
+
+    minTileContrast: 8,
+    minSharpTileRatio: 0.55,
+    minInformativeTiles: 4,
+  );
+  static const ImageQualityConfig photoCapture = ImageQualityConfig(
+    blurThreshold: 200,
+    minBrightness: 30,
+    maxBrightness: 235,
+    minContrast: 45,
+  );
+
+  static const ImageQualityConfig relaxed = ImageQualityConfig(
+    blurThreshold: 50,
+    minBrightness: 25,
+    maxBrightness: 240,
+    minContrast: 30,
+    minSharpTileRatio: 0.40,
+  );
+
+  static const ImageQualityConfig strict = ImageQualityConfig(
+    blurThreshold: 250,
+    minBrightness: 50,
+    maxBrightness: 200,
+    minContrast: 65,
+    minSharpTileRatio: 0.65,
+  );
+
+  /// Creates an [ImageQualityConfig] from a legacy threshold config.
+  ///
+  /// The parameter accepts [ImageQualityConfig] directly; `QualityConfig` is a
+  /// backwards-compatible alias for the same type.
+  factory ImageQualityConfig.fromQualityConfig(
+    ImageQualityConfig config, {
+    int maxAnalysisDimension = defaultMaxAnalysisDimension,
+  }) =>
+      config.copyWith(
+        maxAnalysisDimension: maxAnalysisDimension,
+      );
+
   ImageQualityConfig copyWith({
     double? blurThreshold,
     double? minBrightness,
     double? maxBrightness,
     double? minContrast,
     int? maxAnalysisDimension,
+    bool? denoiseBeforeSharpness,
+    int? tileRows,
+    int? tileColumns,
+    double? minTileContrast,
+    int? minInformativeTiles,
+    double? minSharpTileRatio,
+    double? minTenengradScore,
   }) {
     return ImageQualityConfig(
       blurThreshold: blurThreshold ?? this.blurThreshold,
@@ -151,66 +157,152 @@ class ImageQualityConfig {
       maxBrightness: maxBrightness ?? this.maxBrightness,
       minContrast: minContrast ?? this.minContrast,
       maxAnalysisDimension: maxAnalysisDimension ?? this.maxAnalysisDimension,
+      denoiseBeforeSharpness:
+          denoiseBeforeSharpness ?? this.denoiseBeforeSharpness,
+      tileRows: tileRows ?? this.tileRows,
+      tileColumns: tileColumns ?? this.tileColumns,
+      minTileContrast: minTileContrast ?? this.minTileContrast,
+      minInformativeTiles: minInformativeTiles ?? this.minInformativeTiles,
+      minSharpTileRatio: minSharpTileRatio ?? this.minSharpTileRatio,
+      minTenengradScore: minTenengradScore ?? this.minTenengradScore,
     );
   }
 
-  /// Serializes this configuration into an isolate/JSON friendly map.
-  Map<String, dynamic> toMap() => <String, dynamic>{
-        'blurThreshold': blurThreshold,
-        'minBrightness': minBrightness,
-        'maxBrightness': maxBrightness,
-        'minContrast': minContrast,
-        'maxAnalysisDimension': maxAnalysisDimension,
-      };
+  Map<String, dynamic> toMap() {
+    return {
+      'blurThreshold': blurThreshold,
+      'minBrightness': minBrightness,
+      'maxBrightness': maxBrightness,
+      'minContrast': minContrast,
+      'maxAnalysisDimension': maxAnalysisDimension,
+      'denoiseBeforeSharpness': denoiseBeforeSharpness,
+      'tileRows': tileRows,
+      'tileColumns': tileColumns,
+      'minTileContrast': minTileContrast,
+      'minInformativeTiles': minInformativeTiles,
+      'minSharpTileRatio': minSharpTileRatio,
+      'minTenengradScore': minTenengradScore,
+    };
+  }
 
-  /// Rebuilds a configuration from a map produced by [toMap] or by JSON.
-  ///
-  /// Missing or malformed entries fall back to the documented defaults so a
-  /// malformed payload never crashes the receiving isolate.
-  factory ImageQualityConfig.fromMap(Map<Object?, Object?> map) {
-    final maxAnalysisDimension = _asInt(
-      map['maxAnalysisDimension'],
-      fallback: defaultMaxAnalysisDimension,
-    );
+  factory ImageQualityConfig.fromMap(
+    Map<Object?, Object?> map,
+  ) {
     return ImageQualityConfig(
-      blurThreshold: _asDouble(map['blurThreshold'], fallback: 100.0),
-      minBrightness: _asDouble(map['minBrightness'], fallback: 40.0),
-      maxBrightness: _asDouble(map['maxBrightness'], fallback: 220.0),
-      minContrast: _asDouble(map['minContrast'], fallback: 50.0),
-      maxAnalysisDimension: maxAnalysisDimension < 0 ? 0 : maxAnalysisDimension,
+      blurThreshold: _asDouble(
+        map['blurThreshold'],
+        fallback: 100,
+      ),
+      minBrightness: _asDouble(
+        map['minBrightness'],
+        fallback: 40,
+      ),
+      maxBrightness: _asDouble(
+        map['maxBrightness'],
+        fallback: 220,
+      ),
+      minContrast: _asDouble(
+        map['minContrast'],
+        fallback: 50,
+      ),
+      maxAnalysisDimension: _asInt(
+        map['maxAnalysisDimension'],
+        fallback: defaultMaxAnalysisDimension,
+      ),
+      denoiseBeforeSharpness: _asBool(
+        map['denoiseBeforeSharpness'],
+        fallback: true,
+      ),
+      tileRows: _asInt(
+        map['tileRows'],
+        fallback: 4,
+      ),
+      tileColumns: _asInt(
+        map['tileColumns'],
+        fallback: 4,
+      ),
+      minTileContrast: _asDouble(
+        map['minTileContrast'],
+        fallback: 8,
+      ),
+      minInformativeTiles: _asInt(
+        map['minInformativeTiles'],
+        fallback: 4,
+      ),
+      minSharpTileRatio: _asDouble(
+        map['minSharpTileRatio'],
+        fallback: 0.5,
+      ),
+      minTenengradScore: _asDouble(
+        map['minTenengradScore'],
+        fallback: 0,
+      ),
     );
   }
 
   @override
-  String toString() =>
-      'ImageQualityConfig(blurThreshold: $blurThreshold, brightness: '
-      '$minBrightness-$maxBrightness, minContrast: $minContrast, '
-      'maxAnalysisDimension: $maxAnalysisDimension)';
+  String toString() {
+    return 'ImageQualityConfig('
+        'blurThreshold: $blurThreshold, '
+        'brightness: $minBrightness-$maxBrightness, '
+        'minContrast: $minContrast, '
+        'maxAnalysisDimension: $maxAnalysisDimension, '
+        'tiles: ${tileColumns}x$tileRows, '
+        'minSharpTileRatio: $minSharpTileRatio'
+        ')';
+  }
 
   @override
-  bool operator ==(Object other) =>
-      identical(this, other) ||
-      other is ImageQualityConfig &&
-          runtimeType == other.runtimeType &&
-          blurThreshold == other.blurThreshold &&
-          minBrightness == other.minBrightness &&
-          maxBrightness == other.maxBrightness &&
-          minContrast == other.minContrast &&
-          maxAnalysisDimension == other.maxAnalysisDimension;
+  bool operator ==(Object other) {
+    return other is ImageQualityConfig &&
+        blurThreshold == other.blurThreshold &&
+        minBrightness == other.minBrightness &&
+        maxBrightness == other.maxBrightness &&
+        minContrast == other.minContrast &&
+        maxAnalysisDimension == other.maxAnalysisDimension &&
+        denoiseBeforeSharpness == other.denoiseBeforeSharpness &&
+        tileRows == other.tileRows &&
+        tileColumns == other.tileColumns &&
+        minTileContrast == other.minTileContrast &&
+        minInformativeTiles == other.minInformativeTiles &&
+        minSharpTileRatio == other.minSharpTileRatio &&
+        minTenengradScore == other.minTenengradScore;
+  }
 
   @override
-  int get hashCode =>
-      blurThreshold.hashCode ^
-      minBrightness.hashCode ^
-      maxBrightness.hashCode ^
-      minContrast.hashCode ^
-      maxAnalysisDimension.hashCode;
+  int get hashCode => Object.hash(
+        blurThreshold,
+        minBrightness,
+        maxBrightness,
+        minContrast,
+        maxAnalysisDimension,
+        denoiseBeforeSharpness,
+        tileRows,
+        tileColumns,
+        minTileContrast,
+        minInformativeTiles,
+        minSharpTileRatio,
+        minTenengradScore,
+      );
 }
 
-/// Reads a numeric payload entry as a [double].
-double _asDouble(Object? value, {required double fallback}) =>
-    value is num ? value.toDouble() : fallback;
+double _asDouble(
+  Object? value, {
+  required double fallback,
+}) {
+  return value is num ? value.toDouble() : fallback;
+}
 
-/// Reads a numeric payload entry as an [int].
-int _asInt(Object? value, {required int fallback}) =>
-    value is num ? value.toInt() : fallback;
+int _asInt(
+  Object? value, {
+  required int fallback,
+}) {
+  return value is num ? value.toInt() : fallback;
+}
+
+bool _asBool(
+  Object? value, {
+  required bool fallback,
+}) {
+  return value is bool ? value : fallback;
+}
