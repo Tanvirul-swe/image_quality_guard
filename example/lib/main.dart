@@ -85,7 +85,9 @@ class _QualityGuardPageState extends State<QualityGuardPage> {
     ),
     QualityProfile(
       name: 'Document',
-      description: 'Forms, receipts, and printed text',
+      description: 'Full-page forms, receipts, and printed text. The page '
+          'must fill most of the frame; use Card scan or NID Capture for '
+          'ID cards',
       icon: Icons.description_outlined,
       config: ImageQualityConfig.documentScanning,
     ),
@@ -942,8 +944,18 @@ class _ResultView extends StatelessWidget {
           icon: Icons.center_focus_strong_outlined,
           label: 'Sharpness (Laplacian variance)',
           value: result.sharpnessScore.toStringAsFixed(1),
-          passed: !result.isBlurry,
+          passed: !result.isOutOfFocus,
         ),
+        if (result.config.minSharpTileRatio > 0) ...[
+          const Divider(height: 1),
+          _CheckRow(
+            icon: Icons.crop_free,
+            label: 'Sharp area',
+            value: '${result.sharpTilePercentage.toStringAsFixed(0)}% '
+                '(min ${(result.config.minSharpTileRatio * 100).toStringAsFixed(0)}%)',
+            passed: !result.hasLowSharpCoverage,
+          ),
+        ],
         const Divider(height: 1),
         _CheckRow(
           icon: Icons.light_mode_outlined,
@@ -957,6 +969,13 @@ class _ResultView extends StatelessWidget {
           label: 'Contrast',
           value: result.contrast.toStringAsFixed(1),
           passed: result.hasGoodContrast,
+        ),
+        const Divider(height: 1),
+        _CheckRow(
+          icon: Icons.flare_outlined,
+          label: 'Glare (blown out pixels)',
+          value: '${(result.glareRatio * 100).toStringAsFixed(1)}%',
+          passed: !result.hasGlare,
         ),
         const SizedBox(height: 18),
         const Text(
@@ -987,7 +1006,10 @@ class _ResultView extends StatelessWidget {
 
   String _friendlyIssues(ImageQualityResult value) {
     final issues = <String>[];
-    if (value.isBlurry) issues.add('Hold the camera steady');
+    if (value.isOutOfFocus) issues.add('Hold the camera steady');
+    if (value.hasLowSharpCoverage) {
+      issues.add('Move closer so the page fills the frame');
+    }
     switch (value.brightnessLevel) {
       case BrightnessLevel.tooDark:
         issues.add('Use more light');
@@ -998,6 +1020,9 @@ class _ResultView extends StatelessWidget {
     }
     if (!value.hasGoodContrast) {
       issues.add('Use a clearer background');
+    }
+    if (value.hasGlare) {
+      issues.add('Tilt the card to avoid reflections');
     }
     return issues.join(' | ');
   }

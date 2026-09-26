@@ -7,6 +7,17 @@ import 'blur_detector.dart';
 import 'tenengrad_detector.dart';
 
 abstract final class SharpnessDetector {
+  /// Percentile of the informative tile scores used as the sharpness score.
+  ///
+  /// A median would treat every informative tile as equally important, but in
+  /// a card or document photo most tiles show plain card surface, a portrait
+  /// or the table behind the card - areas that are legitimately smooth even
+  /// when the photo is perfectly focused. Only the tiles that hold text and
+  /// fine print carry the focus signal, so the score follows the upper tiles.
+  /// With the default 4x4 grid the 80th percentile needs about four sharp
+  /// tiles, so a single noisy or high-contrast tile cannot pass a blurry image.
+  static const double sharpnessPercentile = 0.80;
+
   static SharpnessResult analyze(
     Uint8List luminance, {
     required int width,
@@ -20,9 +31,7 @@ abstract final class SharpnessDetector {
     required double minSharpTileRatio,
     required double minTenengradScore,
   }) {
-    if (width < 3 ||
-        height < 3 ||
-        luminance.length < width * height) {
+    if (width < 3 || height < 3 || luminance.length < width * height) {
       return const SharpnessResult(
         isBlurry: true,
         rawLaplacianVariance: 0,
@@ -144,46 +153,36 @@ abstract final class SharpnessDetector {
 
     final informativeTileCount = tileScores.length;
 
-    final medianSharpness = informativeTileCount == 0
+    final upperTileSharpness = informativeTileCount == 0
         ? denoisedLaplacian
-        : _median(tileScores);
+        : _percentile(tileScores, sharpnessPercentile);
 
     final lowTileSharpness = informativeTileCount == 0
         ? denoisedLaplacian
         : _percentile(tileScores, 0.25);
 
-    final sharpTileRatio = informativeTileCount == 0
-        ? 0.0
-        : sharpTiles / informativeTileCount;
+    final sharpTileRatio =
+        informativeTileCount == 0 ? 0.0 : sharpTiles / informativeTileCount;
 
-    // If enough useful tiles exist, prefer the median tile score.
-    //
-    // This prevents one sharp card border or noisy section from making
-    // the entire image appear sharp.
-    final robustSharpnessScore =
-        informativeTileCount >= minInformativeTiles
-            ? medianSharpness
-            : denoisedLaplacian;
+    // If enough useful tiles exist, score the detailed regions of the image
+    // (see [sharpnessPercentile]) instead of averaging them with smooth areas.
+    final robustSharpnessScore = informativeTileCount >= minInformativeTiles
+        ? upperTileSharpness
+        : denoisedLaplacian;
 
     // =========================================================
     // 6. Final decision
     // =========================================================
 
-    final sharpnessFailed =
-        robustSharpnessScore < blurThreshold;
+    final sharpnessFailed = robustSharpnessScore < blurThreshold;
 
-    final tileCoverageFailed =
-        informativeTileCount >= minInformativeTiles &&
+    final tileCoverageFailed = informativeTileCount >= minInformativeTiles &&
         sharpTileRatio < minSharpTileRatio;
 
     final tenengradFailed =
-        minTenengradScore > 0 &&
-        tenengrad < minTenengradScore;
+        minTenengradScore > 0 && tenengrad < minTenengradScore;
 
-    final isBlurry =
-        sharpnessFailed ||
-        tileCoverageFailed ||
-        tenengradFailed;
+    final isBlurry = sharpnessFailed || tileCoverageFailed || tenengradFailed;
 
     return SharpnessResult(
       isBlurry: isBlurry,
@@ -238,8 +237,7 @@ abstract final class SharpnessDetector {
       for (var x = xStart + 1; x < xEnd - 1; x++) {
         final index = row + x;
 
-        final response =
-            4.0 * luminance[index] -
+        final response = 4.0 * luminance[index] -
             luminance[index - 1] -
             luminance[index + 1] -
             luminance[index - width] -
@@ -252,18 +250,6 @@ abstract final class SharpnessDetector {
     return statistics.variance;
   }
 
-  static double _median(List<double> values) {
-    if (values.isEmpty) return 0;
-
-    final middle = values.length ~/ 2;
-
-    if (values.length.isOdd) {
-      return values[middle];
-    }
-
-    return (values[middle - 1] + values[middle]) / 2;
-  }
-
   static double _percentile(
     List<double> values,
     double percentile,
@@ -272,8 +258,7 @@ abstract final class SharpnessDetector {
 
     final normalized = percentile.clamp(0.0, 1.0);
 
-    final index =
-        ((values.length - 1) * normalized).round();
+    final index = ((values.length - 1) * normalized).round();
 
     return values[index];
   }

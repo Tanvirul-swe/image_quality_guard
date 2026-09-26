@@ -37,6 +37,7 @@ class ImageQualityResult {
     required this.blurScore,
     required this.brightness,
     required this.contrast,
+    this.glareRatio = 0.0,
     required this.originalWidth,
     required this.originalHeight,
     required this.analyzedWidth,
@@ -133,6 +134,11 @@ class ImageQualityResult {
   /// Higher generally means more tonal variation.
   final double contrast;
 
+  /// Fraction (0.0 - 1.0) of pixels that are blown out (luminance >= 250).
+  ///
+  /// High values mean glare or overexposure hides part of the image.
+  final double glareRatio;
+
   // ---------------------------------------------------------------------------
   // IMAGE METADATA
   // ---------------------------------------------------------------------------
@@ -170,36 +176,33 @@ class ImageQualityResult {
   /// 3. Optional Tenengrad minimum
   ///
   /// Raw [blurScore] is intentionally NOT used directly as the main decision.
-  bool get isBlurry {
-    // Main robust sharpness gate.
-    if (sharpnessScore < config.blurThreshold) {
-      return true;
-    }
+  bool get isBlurry => isOutOfFocus || hasLowSharpCoverage;
 
-    // Tile-based gate.
-    //
-    // Only apply it when enough informative tiles were available.
-    if (informativeTileCount >= config.minInformativeTiles &&
-        sharpTileRatio < config.minSharpTileRatio) {
-      return true;
-    }
+  /// Whether the sharpness measurements themselves are too low: the robust
+  /// [sharpnessScore], or the optional Tenengrad gate (0 disables it).
+  bool get isOutOfFocus =>
+      sharpnessScore < config.blurThreshold ||
+      (config.minTenengradScore > 0 &&
+          tenengradScore < config.minTenengradScore);
 
-    // Optional Tenengrad gate.
-    //
-    // A value of 0 disables this check.
-    if (config.minTenengradScore > 0 &&
-        tenengradScore < config.minTenengradScore) {
-      return true;
-    }
-
-    return false;
-  }
+  /// Whether too small a share of the image is sharp, although its sharpest
+  /// regions may be in focus.
+  ///
+  /// Only checked when `config.minSharpTileRatio` is set and enough
+  /// informative tiles exist. Background around a card or page counts as not
+  /// sharp, so this usually means the subject does not fill the frame.
+  bool get hasLowSharpCoverage =>
+      informativeTileCount >= config.minInformativeTiles &&
+      sharpTileRatio < config.minSharpTileRatio;
 
   /// Whether brightness is within the configured acceptable range.
   bool get isBrightnessOptimal => brightnessLevel == BrightnessLevel.optimal;
 
   /// Whether image contrast reaches the configured minimum.
   bool get hasGoodContrast => contrast >= config.minContrast;
+
+  /// Whether more pixels are blown out than the configured maximum allows.
+  bool get hasGlare => glareRatio > config.maxGlareRatio;
 
   /// Whether the image was resized before analysis.
   bool get wasDownsampled =>
@@ -235,7 +238,7 @@ class ImageQualityResult {
   List<String> get issues {
     final detected = <String>[];
 
-    if (isBlurry) {
+    if (isOutOfFocus) {
       final buffer = StringBuffer(
         'Image is blurry '
         '(sharpness ${sharpnessScore.toStringAsFixed(2)}, '
@@ -259,6 +262,12 @@ class ImageQualityResult {
       buffer.write(')');
 
       detected.add(buffer.toString());
+    } else if (hasLowSharpCoverage) {
+      detected.add(
+        'Only ${sharpTilePercentage.toStringAsFixed(0)}% of the image is sharp '
+        '(minimum ${(config.minSharpTileRatio * 100).toStringAsFixed(0)}%); '
+        'fill the frame with the subject',
+      );
     }
 
     switch (brightnessLevel) {
@@ -285,6 +294,14 @@ class ImageQualityResult {
         'Image has low contrast '
         '(score ${contrast.toStringAsFixed(2)} < '
         'minimum ${config.minContrast.toStringAsFixed(2)})',
+      );
+    }
+
+    if (hasGlare) {
+      detected.add(
+        'Image has glare '
+        '(${(glareRatio * 100).toStringAsFixed(1)}% blown out pixels > '
+        'maximum ${(config.maxGlareRatio * 100).toStringAsFixed(1)}%)',
       );
     }
 
@@ -332,6 +349,7 @@ class ImageQualityResult {
         // Brightness / contrast
         'brightness': brightness,
         'contrast': contrast,
+        'glareRatio': glareRatio,
 
         // Metadata
         'originalWidth': originalWidth,
@@ -393,6 +411,8 @@ class ImageQualityResult {
 
       contrast: _asDouble(map['contrast']),
 
+      glareRatio: _asDouble(map['glareRatio']),
+
       // ---------------------------------------------------------------------
       // Image metadata
       // ---------------------------------------------------------------------
@@ -436,6 +456,7 @@ class ImageQualityResult {
       'informativeTiles: $informativeTileCount/$totalTileCount, '
       'brightness: ${brightness.toStringAsFixed(2)}, '
       'contrast: ${contrast.toStringAsFixed(2)}, '
+      'glareRatio: ${glareRatio.toStringAsFixed(3)}, '
       'original: ${originalWidth}x$originalHeight, '
       'analyzed: ${analyzedWidth}x$analyzedHeight, '
       'processingTimeMs: $processingTimeMs'
@@ -461,6 +482,7 @@ class ImageQualityResult {
           totalTileCount == other.totalTileCount &&
           brightness == other.brightness &&
           contrast == other.contrast &&
+          glareRatio == other.glareRatio &&
           originalWidth == other.originalWidth &&
           originalHeight == other.originalHeight &&
           analyzedWidth == other.analyzedWidth &&
@@ -481,6 +503,7 @@ class ImageQualityResult {
         totalTileCount,
         brightness,
         contrast,
+        glareRatio,
         originalWidth,
         originalHeight,
         analyzedWidth,
@@ -492,6 +515,6 @@ class ImageQualityResult {
 
 /// Reads a numeric payload value as double.
 double _asDouble(Object? value) => value is num ? value.toDouble() : 0.0;
- 
+
 /// Reads a numeric payload value as int.
 int _asInt(Object? value) => value is num ? value.toInt() : 0;

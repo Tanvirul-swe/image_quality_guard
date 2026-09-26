@@ -190,8 +190,7 @@ void main() {
       ).validate(bytes);
       final guard = await ImageQualityGuard.analyze(
         bytes,
-        config: ImageQualityConfig.fullResolution
-            .copyWith(blurThreshold: 150),
+        config: ImageQualityConfig.fullResolution.copyWith(blurThreshold: 150),
       );
 
       expect(guard.blurScore, legacy.blurResult.variance);

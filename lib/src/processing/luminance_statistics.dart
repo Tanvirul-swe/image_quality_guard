@@ -61,3 +61,20 @@ RunningStatistics summarizeLuminance(Uint8List samples) {
   }
   return statistics;
 }
+
+/// Luminance at and above which a sample counts as blown out (glare).
+const int glareLuminance = 250;
+
+/// Fraction (0.0 - 1.0) of luminance [samples] that are blown out.
+///
+/// Mean brightness cannot see glare: a reflection on a laminated card clips
+/// the text underneath to pure white while the rest of the photo keeps the
+/// average in range. Counting clipped samples measures exactly that loss.
+double glareRatio(Uint8List samples) {
+  if (samples.isEmpty) return 0;
+  var clipped = 0;
+  for (var index = 0; index < samples.length; index++) {
+    if (samples[index] >= glareLuminance) clipped++;
+  }
+  return clipped / samples.length;
+}

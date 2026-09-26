@@ -59,7 +59,11 @@ void main() {
       );
 
       expect(result.isValid, isTrue);
-      expect(processor.analyzeSync(pngBytes(checkerboardImage(width: 32, height: 32))).isValid, isTrue);
+      expect(
+          processor
+              .analyzeSync(pngBytes(checkerboardImage(width: 32, height: 32)))
+              .isValid,
+          isTrue);
     });
   });
 
@@ -115,7 +119,8 @@ void main() {
       final response = runImageQualityJob(<String, dynamic>{});
 
       expect(response[responseStatusKey], jobStatusFailure);
-      expect(response[responseErrorTypeKey], ImageQualityErrorType.analysis.name);
+      expect(
+          response[responseErrorTypeKey], ImageQualityErrorType.analysis.name);
       expect(
         () => decodeImageQualityResponse(response),
         throwsA(isA<ImageAnalysisException>()),
@@ -295,4 +300,3 @@ void main() {
     });
   });
 }
-

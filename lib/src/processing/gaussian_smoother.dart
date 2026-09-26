@@ -18,9 +18,7 @@ abstract final class GaussianSmoother {
     required int width,
     required int height,
   }) {
-    if (width < 3 ||
-        height < 3 ||
-        input.length < width * height) {
+    if (width < 3 || height < 3 || input.length < width * height) {
       return Uint8List.fromList(input);
     }
 
@@ -49,8 +47,7 @@ abstract final class GaussianSmoother {
       for (var x = 1; x < width - 1; x++) {
         final index = row + x;
 
-        final sum =
-            input[index - width - 1] +
+        final sum = input[index - width - 1] +
             (2 * input[index - width]) +
             input[index - width + 1] +
             (2 * input[index - 1]) +

@@ -7,13 +7,14 @@ class ImageQualityConfig {
     this.maxAnalysisDimension = defaultMaxAnalysisDimension,
 
     // New sharpness settings
-    this.denoiseBeforeSharpness = true,
+    this.denoiseBeforeSharpness = false,
     this.tileRows = 4,
     this.tileColumns = 4,
     this.minTileContrast = 8.0,
     this.minInformativeTiles = 4,
-    this.minSharpTileRatio = 0.50,
+    this.minSharpTileRatio = 0.0,
     this.minTenengradScore = 0.0,
+    this.maxGlareRatio = 1.0,
   })  : assert(blurThreshold > 0),
         assert(minBrightness >= 0 && minBrightness <= 255),
         assert(maxBrightness >= 0 && maxBrightness <= 255),
@@ -27,7 +28,8 @@ class ImageQualityConfig {
         assert(
           minSharpTileRatio >= 0 && minSharpTileRatio <= 1,
         ),
-        assert(minTenengradScore >= 0);
+        assert(minTenengradScore >= 0),
+        assert(maxGlareRatio >= 0 && maxGlareRatio <= 1);
 
   static const int defaultMaxAnalysisDimension = 1280;
 
@@ -39,9 +41,22 @@ class ImageQualityConfig {
 
   final double minContrast;
 
+  /// Longest side, in pixels, that brightness, contrast and glare analyze;
+  /// `0` analyzes the full resolution.
+  ///
+  /// Sharpness is always measured at most at [defaultMaxAnalysisDimension],
+  /// the size every [blurThreshold] is calibrated for, because Laplacian
+  /// scores are not comparable across image scales.
   final int maxAnalysisDimension;
 
   /// Apply 3×3 Gaussian smoothing before measuring sharpness.
+  ///
+  /// Disabled by default. Downsampling large photos with area averaging already
+  /// removes sensor noise, and the extra smoothing also removes the fine detail
+  /// (text, print patterns) that proves an image is in focus: it lowers the
+  /// sharpness score of a sharp photo roughly 5-10x. Every preset threshold is
+  /// calibrated without it, so lower [blurThreshold] accordingly when enabling
+  /// it, for example for noisy full resolution analysis.
   final bool denoiseBeforeSharpness;
 
   final int tileRows;
@@ -56,12 +71,24 @@ class ImageQualityConfig {
   final int minInformativeTiles;
 
   /// Minimum fraction of informative tiles that must pass blurThreshold.
+  ///
+  /// 0 disables this gate, which is the default. Only enable it when the
+  /// subject fills the frame (for example a flat document): a card lying on a
+  /// table leaves most tiles without fine detail even when it is perfectly
+  /// focused, so a card photo can never reach a high ratio.
   final double minSharpTileRatio;
 
   /// Optional secondary Sobel/Tenengrad gate.
   ///
   /// 0 disables this gate.
   final double minTenengradScore;
+
+  /// Maximum fraction (0.0 - 1.0) of blown out pixels (luminance >= 250).
+  ///
+  /// Catches glare and overexposure, such as a flash or sunlight reflection
+  /// on a laminated card, which the average [maxBrightness] cannot see. 1.0,
+  /// the default, disables the check; card and document presets enable it.
+  final double maxGlareRatio;
 
   bool get downscalesLargeImages => maxAnalysisDimension > 0;
 
@@ -76,15 +103,20 @@ class ImageQualityConfig {
     minBrightness: 35,
     maxBrightness: 230,
     minContrast: 40,
-    minSharpTileRatio: 0.50,
+    maxGlareRatio: 0.03,
   );
 
+  /// A well exposed page is mostly white paper, so its average brightness is
+  /// high and its standard deviation contrast is low even with crisp black
+  /// text. Overexposure is caught by [maxGlareRatio] instead of a low
+  /// [maxBrightness].
   static const ImageQualityConfig documentScanning = ImageQualityConfig(
     blurThreshold: 120,
     minBrightness: 45,
-    maxBrightness: 215,
-    minContrast: 55,
+    maxBrightness: 235,
+    minContrast: 30,
     minSharpTileRatio: 0.55,
+    maxGlareRatio: 0.03,
   );
 
   /// Starting preset for NID / ID-card capture.
@@ -95,13 +127,9 @@ class ImageQualityConfig {
     minBrightness: 55,
     maxBrightness: 225,
     minContrast: 25,
-
-    denoiseBeforeSharpness: true,
-
-    minTileContrast: 8,
-    minSharpTileRatio: 0.55,
-    minInformativeTiles: 4,
+    maxGlareRatio: 0.03,
   );
+
   static const ImageQualityConfig photoCapture = ImageQualityConfig(
     blurThreshold: 200,
     minBrightness: 30,
@@ -114,7 +142,6 @@ class ImageQualityConfig {
     minBrightness: 25,
     maxBrightness: 240,
     minContrast: 30,
-    minSharpTileRatio: 0.40,
   );
 
   static const ImageQualityConfig strict = ImageQualityConfig(
@@ -150,6 +177,7 @@ class ImageQualityConfig {
     int? minInformativeTiles,
     double? minSharpTileRatio,
     double? minTenengradScore,
+    double? maxGlareRatio,
   }) {
     return ImageQualityConfig(
       blurThreshold: blurThreshold ?? this.blurThreshold,
@@ -165,6 +193,7 @@ class ImageQualityConfig {
       minInformativeTiles: minInformativeTiles ?? this.minInformativeTiles,
       minSharpTileRatio: minSharpTileRatio ?? this.minSharpTileRatio,
       minTenengradScore: minTenengradScore ?? this.minTenengradScore,
+      maxGlareRatio: maxGlareRatio ?? this.maxGlareRatio,
     );
   }
 
@@ -182,6 +211,7 @@ class ImageQualityConfig {
       'minInformativeTiles': minInformativeTiles,
       'minSharpTileRatio': minSharpTileRatio,
       'minTenengradScore': minTenengradScore,
+      'maxGlareRatio': maxGlareRatio,
     };
   }
 
@@ -211,7 +241,7 @@ class ImageQualityConfig {
       ),
       denoiseBeforeSharpness: _asBool(
         map['denoiseBeforeSharpness'],
-        fallback: true,
+        fallback: false,
       ),
       tileRows: _asInt(
         map['tileRows'],
@@ -231,11 +261,15 @@ class ImageQualityConfig {
       ),
       minSharpTileRatio: _asDouble(
         map['minSharpTileRatio'],
-        fallback: 0.5,
+        fallback: 0,
       ),
       minTenengradScore: _asDouble(
         map['minTenengradScore'],
         fallback: 0,
+      ),
+      maxGlareRatio: _asDouble(
+        map['maxGlareRatio'],
+        fallback: 1,
       ),
     );
   }
@@ -248,7 +282,8 @@ class ImageQualityConfig {
         'minContrast: $minContrast, '
         'maxAnalysisDimension: $maxAnalysisDimension, '
         'tiles: ${tileColumns}x$tileRows, '
-        'minSharpTileRatio: $minSharpTileRatio'
+        'minSharpTileRatio: $minSharpTileRatio, '
+        'maxGlareRatio: $maxGlareRatio'
         ')';
   }
 
@@ -266,7 +301,8 @@ class ImageQualityConfig {
         minTileContrast == other.minTileContrast &&
         minInformativeTiles == other.minInformativeTiles &&
         minSharpTileRatio == other.minSharpTileRatio &&
-        minTenengradScore == other.minTenengradScore;
+        minTenengradScore == other.minTenengradScore &&
+        maxGlareRatio == other.maxGlareRatio;
   }
 
   @override
@@ -283,6 +319,7 @@ class ImageQualityConfig {
         minInformativeTiles,
         minSharpTileRatio,
         minTenengradScore,
+        maxGlareRatio,
       );
 }
 

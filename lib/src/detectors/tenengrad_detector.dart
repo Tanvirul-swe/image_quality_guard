@@ -12,9 +12,7 @@ abstract final class TenengradDetector {
     required int width,
     required int height,
   }) {
-    if (width < 3 ||
-        height < 3 ||
-        luminance.length < width * height) {
+    if (width < 3 || height < 3 || luminance.length < width * height) {
       return 0;
     }
 
@@ -38,16 +36,14 @@ abstract final class TenengradDetector {
         final bottom = luminance[i + width];
         final bottomRight = luminance[i + width + 1];
 
-        final gx =
-            -topLeft +
+        final gx = -topLeft +
             topRight -
             (2 * left) +
             (2 * right) -
             bottomLeft +
             bottomRight;
 
-        final gy =
-            -topLeft -
+        final gy = -topLeft -
             (2 * top) -
             topRight +
             bottomLeft +

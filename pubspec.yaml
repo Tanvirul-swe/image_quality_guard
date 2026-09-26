@@ -1,6 +1,6 @@
 name: image_quality_guard
-description: Detect blur, brightness, and contrast issues in images with configurable thresholds and presets for reliable capture flows.
-version: 1.0.0
+description: Detect blur, glare, brightness, and contrast issues in images with configurable thresholds and presets for reliable capture flows.
+version: 1.1.0
 homepage: https://github.com/Tanvirul-swe/image_quality_guard
 repository: https://github.com/Tanvirul-swe/image_quality_guard
 issue_tracker: https://github.com/Tanvirul-swe/image_quality_guard/issues

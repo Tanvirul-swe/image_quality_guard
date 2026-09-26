@@ -169,7 +169,8 @@ void main() {
       }
 
       expect(BrightnessDetector.averageOf(luminance), closeTo(127.5, 0.01));
-      expect(ContrastDetector.standardDeviationOf(luminance), closeTo(127.5, 0.01));
+      expect(ContrastDetector.standardDeviationOf(luminance),
+          closeTo(127.5, 0.01));
       expect(
         BlurDetector.laplacianVariance(luminance, width: 16, height: 16),
         greaterThan(0),
@@ -178,7 +179,8 @@ void main() {
 
     test('classifies precomputed metrics without touching pixels', () {
       expect(const BlurDetector(threshold: 100).classify(50).isBlurry, isTrue);
-      expect(const BlurDetector(threshold: 100).classify(150).isBlurry, isFalse);
+      expect(
+          const BlurDetector(threshold: 100).classify(150).isBlurry, isFalse);
       expect(
         const BrightnessDetector().classify(10).level,
         BrightnessLevel.tooDark,
@@ -196,8 +198,10 @@ void main() {
     });
 
     test('returns a zero variance when there is no interior pixel', () {
-      expect(BlurDetector.laplacianVariance(Uint8List(4), width: 2, height: 2), 0);
-      expect(BlurDetector.laplacianVariance(Uint8List(0), width: 0, height: 0), 0);
+      expect(
+          BlurDetector.laplacianVariance(Uint8List(4), width: 2, height: 2), 0);
+      expect(
+          BlurDetector.laplacianVariance(Uint8List(0), width: 0, height: 0), 0);
     });
 
     test('matches the image based detectors on the same pixels', () {
@@ -264,7 +268,8 @@ void main() {
       expect(validator.checkBrightness(bytes), fromImage.brightnessResult);
       expect(validator.checkContrast(bytes), fromImage.contrastResult);
       expect(validator.checkBlurFromImage(image), fromImage.blurResult);
-      expect(validator.checkBrightnessFromImage(image), fromImage.brightnessResult);
+      expect(validator.checkBrightnessFromImage(image),
+          fromImage.brightnessResult);
       expect(validator.checkContrastFromImage(image), fromImage.contrastResult);
     });
   });

@@ -4,7 +4,7 @@
 
 <p align="center">
   <b>Image Quality Guard</b><br>
-  Detect blurry, poorly lit, and low-contrast images before they enter your upload, scanning, or recognition workflow.
+  Detect blurry, glare-affected, poorly lit, and low-contrast images before they enter your upload, scanning, or recognition workflow.
 </p>
 
 <p align="center">
@@ -25,7 +25,7 @@
 
 ## 🎯 What is Image Quality Guard?
 
-`image_quality_guard` is a platform-independent Dart package for **Flutter** and **Dart** applications. It analyzes image bytes to detect quality issues — blur, brightness, and contrast — before images enter your upload, scanning, or recognition pipeline.
+`image_quality_guard` is a platform-independent Dart package for **Flutter** and **Dart** applications. It analyzes image bytes to detect quality issues — blur, glare, brightness, and contrast — before images enter your upload, scanning, or recognition pipeline.
 
 **No native runtime dependencies.** Analysis runs entirely in Dart, with optional background isolate support for smooth UI performance.
 
@@ -33,11 +33,12 @@
 
 | Capability | Description |
 |---|---|
-| 🔍 **Blur Detection** | Laplacian variance analysis to flag out-of-focus images |
+| 🔍 **Blur Detection** | Tile-based Laplacian variance that scores the detailed regions (text, print) of the image |
+| ✨ **Glare Detection** | Flags blown-out reflections, e.g. on laminated ID cards |
 | 💡 **Brightness Analysis** | Classifies images as too dark, optimal, or too bright |
-| 🎨 **Contrast Measurement** | luminance standard deviation for depth and clarity |
-| ✅ **One-Call Validation** | Combined pass/fail with a single `validate()` call |
-| ⚙️ **5 Presets** | Card, document, photo, relaxed, and strict configurations |
+| 🎨 **Contrast Measurement** | Luminance standard deviation for depth and clarity |
+| ✅ **One-Call Validation** | Combined pass/fail with a single `analyze()` call |
+| ⚙️ **8 Presets** | Mobile, card, NID, document, photo, relaxed, strict, and full-resolution configurations |
 | 🎛️ **Custom Thresholds** | Fine-tune every metric for your specific use case |
 | 🚀 **Background Isolate** | Non-blocking analysis for large images |
 | 🌐 **Web Support** | Runs on Flutter web — desktop, mobile, and browser |
@@ -105,20 +106,24 @@ if (result.isValid) {
 Choose a preset matching your capture scenario:
 
 ```dart
-final guard = ImageQualityGuard.analyze(
+final result = await ImageQualityGuard.analyze(
   imageBytes,
-  config: ImageQualityConfig.documentScanning,
+  config: ImageQualityConfig.nidCapture,
 );
 ```
 
-| Preset | Intended Use | Blur | Min Bright | Max Bright | Min Contrast |
-|---|---|:---:|:---:|:---:|:---:|
-| 🪪 `ImageQualityConfig.cardScanning` | IDs, bank cards, licenses | 80 | 35 | 230 | 40 |
-| 📄 `ImageQualityConfig.documentScanning` | Forms, receipts, printed text | 120 | 45 | 215 | 55 |
-| 📷 `ImageQualityConfig.photoCapture` | High-quality photo capture | 200 | 30 | 235 | 45 |
-| 😊 `ImageQualityConfig.relaxed` | Challenging lighting / low-quality cameras | 50 | 25 | 240 | 30 |
-| ✔️ `ImageQualityConfig.strict` | Strict quality requirements | 250 | 50 | 200 | 65 |
-| 📱 `ImageQualityConfig.mobile` | Balanced defaults for mobile (no downsampling limit change) | 100 | 40 | 220 | 50 |
+| Preset | Intended Use | Blur | Min Bright | Max Bright | Min Contrast | Max Glare |
+|---|---|:---:|:---:|:---:|:---:|:---:|
+| 🪪 `ImageQualityConfig.cardScanning` | IDs, bank cards, licenses | 80 | 35 | 230 | 40 | 3% |
+| 🆔 `ImageQualityConfig.nidCapture` | National ID cards (calibrate on your devices) | 80 | 55 | 225 | 25 | 3% |
+| 📄 `ImageQualityConfig.documentScanning` | Forms, receipts, printed text | 120 | 45 | 235 | 30 | 3% |
+| 📷 `ImageQualityConfig.photoCapture` | High-quality photo capture | 200 | 30 | 235 | 45 | off |
+| 😊 `ImageQualityConfig.relaxed` | Challenging lighting / low-quality cameras | 50 | 25 | 240 | 30 | off |
+| ✔️ `ImageQualityConfig.strict` | Strict quality requirements | 250 | 50 | 200 | 65 | off |
+| 📱 `ImageQualityConfig.mobile` | Balanced defaults for everyday images | 100 | 40 | 220 | 50 | off |
+| 🖼️ `ImageQualityConfig.fullResolution` | `mobile` thresholds, brightness/contrast/glare on every pixel | 100 | 40 | 220 | 50 | off |
+
+`documentScanning` also requires 55% (and `strict` 65%) of the detailed image tiles to be sharp, so the page must fill most of the frame. Use `cardScanning` or `nidCapture` for ID cards photographed on a table.
 
 ---
 
@@ -127,24 +132,37 @@ final guard = ImageQualityGuard.analyze(
 Override individual metrics for application-specific needs:
 
 ```dart
-final guard = ImageQualityGuard.analyze(
+final result = await ImageQualityGuard.analyze(
   imageBytes,
-  config: ImageQualityConfig(
+  config: const ImageQualityConfig(
     blurThreshold: 150,
     minBrightness: 50,
     maxBrightness: 210,
     minContrast: 60,
+    maxGlareRatio: 0.03,
   ),
 );
 ```
 
 | Parameter | Description | Range | Default |
 |---|---|:---:|:---:|
-| `blurThreshold` | Higher = sharper image required | 1–∞ | 100.0 |
+| `blurThreshold` | Minimum `sharpnessScore`; higher = sharper image required | 1–∞ | 100.0 |
 | `minBrightness` | Below = too dark (0–255 luminance) | 0–255 | 40.0 |
 | `maxBrightness` | Above = too bright/overexposed (0–255) | 0–255 | 220.0 |
 | `minContrast` | Higher = more luminance variation required | 0–∞ | 50.0 |
-| `maxAnalysisDimension` | Longest side for analysis (px); `0` = full res | 0–∞ | 1280 |
+| `maxGlareRatio` | Max fraction of blown-out pixels (luminance ≥ 250); `1.0` = off | 0–1 | 1.0 |
+| `maxAnalysisDimension` | Longest side for brightness/contrast/glare (px); `0` = full res. Sharpness is always measured at ≤ 1280 px, the scale `blurThreshold` is calibrated for | 0–∞ | 1280 |
+
+#### Advanced sharpness settings
+
+| Parameter | Description | Default |
+|---|---|:---:|
+| `tileRows` / `tileColumns` | Grid used for tile-based sharpness | 4 × 4 |
+| `minTileContrast` | Tiles with a lower luminance std. deviation are ignored as blank | 8.0 |
+| `minInformativeTiles` | Fewer informative tiles → whole-image Laplacian is used instead | 4 |
+| `minSharpTileRatio` | Minimum share of informative tiles that must reach `blurThreshold`; `0` = off | 0.0 |
+| `minTenengradScore` | Optional Sobel/Tenengrad edge-strength gate; `0` = off | 0.0 |
+| `denoiseBeforeSharpness` | 3×3 Gaussian smoothing before measuring; lowers scores ~5–10×, so lower `blurThreshold` too | false |
 
 > 💡 **Tip:** Quality thresholds are heuristics. Calibrate them with representative images from your target devices and environments.
 
@@ -170,6 +188,8 @@ final contrast = validator.checkContrast(imageBytes);
 print('Score: ${contrast.contrastScore}, Good: ${contrast.hasGoodContrast}');
 ```
 
+> The individual checks measure the classic whole-image Laplacian variance. `ImageQualityGuard.analyze()` uses the tile-based `sharpnessScore` described below.
+
 For images already decoded with `package:image`, use the `*FromImage` variants to avoid re-decoding:
 
 ```dart
@@ -187,9 +207,16 @@ final contrast = validator.checkContrastFromImage(decodedImage);
 | Property | Type | Description |
 |---|---|---|
 | `isValid` | `bool` | All checks passed |
-| `blurScore` | `double` | Laplacian variance (higher = sharper) |
+| `sharpnessScore` | `double` | Tile-based sharpness used for the blur decision (higher = sharper) |
+| `isBlurry` | `bool` | `isOutOfFocus` or `hasLowSharpCoverage` |
+| `isOutOfFocus` | `bool` | `sharpnessScore` (or the optional Tenengrad gate) is below the threshold |
+| `hasLowSharpCoverage` | `bool` | Too few tiles are sharp (`minSharpTileRatio`) — usually the subject does not fill the frame |
+| `sharpTileRatio` | `double` | Share of informative tiles reaching `blurThreshold` (0–1) |
+| `blurScore` | `double` | Raw whole-image Laplacian variance (legacy, diagnostic) |
+| `tenengradScore` | `double` | Sobel gradient edge strength (diagnostic) |
 | `brightness` | `double` | Average luminance (0–255) |
 | `contrast` | `double` | Luminance standard deviation |
+| `glareRatio` / `hasGlare` | `double` / `bool` | Share of blown-out pixels and whether it exceeds `maxGlareRatio` |
 | `originalWidth` / `originalHeight` | `int` | Decoded resolution |
 | `analyzedWidth` / `analyzedHeight` | `int` | Resolution fed to detectors |
 | `processingTimeMs` | `int` | Analysis time in ms |
@@ -212,19 +239,14 @@ final contrast = validator.checkContrastFromImage(decodedImage);
 ## 🏗️ Architecture
 
 ```
-┌──────────────────────────────────────────────────┐
-│              Your Flutter UI Isolate              │
-│                                                    │
-│  ┌──────────────────┐       ┌──────────────────┐  │
-│  │ ImageQualityGuard │──────▶│  Background Isolate │
-│  │ .analyze(bytes)   │ send  │                    │  │
-│  └──────────────────┘       │  1. Decode image    │  │
-│                             │  2. Downsample*     │  │
-│  ◀── ImageQualityResult ────│  3. Blur analysis   │  │
-│     (serializable)          │  4. Brightness check │  │
-│                             │  5. Contrast check   │  │
-│                             └──────────────────┘  │
-└──────────────────────────────────────────────────┘
+ Flutter UI isolate                    Background isolate
+┌─────────────────────┐   bytes    ┌──────────────────────────┐
+│ ImageQualityGuard   │──────────▶ │ 1. Decode image          │
+│   .analyze(bytes)   │            │ 2. Downsample*           │
+│                     │            │ 3. Sharpness (tiles)     │
+│                     │   result   │ 4. Brightness + contrast │
+│ ImageQualityResult  │◀────────── │ 5. Glare                 │
+└─────────────────────┘ (map)      └──────────────────────────┘
 ```
 *Only when image exceeds `maxAnalysisDimension` (default 1280px).
 
@@ -232,7 +254,7 @@ final contrast = validator.checkContrastFromImage(decodedImage);
 
 ## 🧮 How It Works
 
-All three checks share the same pipeline: **decode → convert to grayscale → measure**. The image is converted to a flat 8-bit luminance buffer (one byte per pixel) and every metric is computed from that buffer alone.
+All checks share the same pipeline: **decode → convert to grayscale → measure**. The image is converted to a flat 8-bit luminance buffer (one byte per pixel) and every metric is computed from that buffer alone.
 
 ### Processing Pipeline
 
@@ -252,46 +274,52 @@ Raw Image Bytes
 │  0.299R + 0.587G + 0.114B│
 └────────┬─────────────────┘
          │
-    ┌────┼────────────┐
-    │    │            │
-    ▼    ▼            ▼
-┌──────┐┌──────────┐┌────────────┐
-│ Blur ││Brightness││  Contrast  │
-│      ││          ││            │
-└──────┘└──────────┘└────────────┘
+    ┌────┼────────────┬────────────┐
+    │    │            │            │
+    ▼    ▼            ▼            ▼
+┌──────┐┌──────────┐┌──────────┐┌───────┐
+│ Blur ││Brightness││ Contrast ││ Glare │
+└──────┘└──────────┘└──────────┘└───────┘
 ```
 
 ---
 
-### 🔍 Blur Detection — Laplacian Variance
+### 🔍 Blur Detection — Tile-Based Laplacian Variance
 
-Blur is measured using the **Laplacian variance method**, a well-established edge-detection technique:
+Blur is measured with the **Laplacian variance method**, applied per region so that the parts of the image that actually carry detail decide the result:
 
-1. **Apply a Laplacian filter** — For every non-border pixel, compute the edge response:
+1. **Normalize the scale** — Sharpness is always measured on at most 1280 px (the scale every `blurThreshold` is calibrated for), even with `fullResolution`. Area-averaged downsampling also suppresses sensor noise.
+
+2. **Apply a Laplacian filter** — For every non-border pixel, compute the edge response:
    ```
    response = 4 × center − up − down − left − right
    ```
-   This 4-neighbour Laplacian highlights regions of rapid intensity change (edges).
+   This 4-neighbour Laplacian highlights rapid intensity changes (edges). Its variance is high for crisp edges and low when edges are smoothed out.
 
-2. **Calculate variance** — The variance of all Laplacian response values is computed using **Welford's online algorithm** (no per-pixel list is allocated, keeping memory constant regardless of image size):
-   - **High variance** → many strong edges → image is **sharp** ✅
-   - **Low variance** → edges are smoothed out → image is **blurry** ❌
+3. **Score tiles** — The image is split into a 4×4 grid. Tiles whose luminance standard deviation is below `minTileContrast` (blank areas) are ignored; the Laplacian variance of every remaining *informative* tile is computed with **Welford's online algorithm**.
 
-3. **Compare against threshold** — If variance < `blurThreshold`, the image is classified as blurry. Higher `blurThreshold` values require a sharper image.
+4. **Pick the detailed regions** — `sharpnessScore` is the **80th percentile** of the tile scores. In a card or document photo most tiles show the table, plain card surface or a portrait, which are smooth even when the photo is perfectly focused; the percentile follows the tiles holding text and fine print, while still needing several sharp tiles so one noisy tile cannot pass a blurry photo. With fewer than `minInformativeTiles` informative tiles, the whole-image variance is used instead.
 
-4. **Confidence score** — A confidence value (0.0–1.0) indicates how far the variance is from the threshold. Images far from the threshold have high confidence; borderline images have lower confidence.
+5. **Decide** — The image is blurry when `sharpnessScore < blurThreshold` (`isOutOfFocus`), or, when `minSharpTileRatio` is set, when too small a share of the tiles is sharp (`hasLowSharpCoverage`).
 
-```dart
-// Conceptual example of what happens internally:
-//
-// For a sharp image (many crisp edges):
-//   Laplacian responses: [120, 180, 95, 210, ...]  → Variance: ~8500  ✅ Sharp
-//
-// For a blurry image (smoothed edges):
-//   Laplacian responses: [8, 3, 12, 5, ...]        → Variance: ~12    ❌ Blurry
+```
+Sharp card on a table (16 tile scores, sorted):
+  10 11 13 13 15 16 17 20 38 39 46 75 | 1003 1074 1618 2139
+  └─── table, plain card, portrait ──┘   └─ text lines ──┘
+  80th percentile → sharpnessScore ≈ 1003  ✅ (NID threshold 80)
+
+Same card, out of focus:
+  2 2 2 2 2 3 3 4 4 5 6 10 | 30 35 65 83
+  80th percentile → sharpnessScore ≈ 30    ❌
 ```
 
-> **Why Laplacian?** Unlike simple gradient methods, the Laplacian is isotropic (detects edges in all directions equally) and is widely used in camera auto-focus systems, making it a natural choice for general-purpose sharpness detection.
+> **Why Laplacian?** The Laplacian is isotropic (detects edges in all directions equally) and is widely used in camera auto-focus systems, making it a natural choice for general-purpose sharpness detection.
+
+---
+
+### ✨ Glare Detection
+
+Glare is the **share of blown-out pixels** (luminance ≥ 250). A reflection on a laminated card wipes out the text underneath while the average brightness stays normal, so it cannot be caught by `maxBrightness`. When `glareRatio` exceeds `maxGlareRatio` (3% for the card, NID and document presets), the image is rejected with a glare issue.
 
 ---
 
@@ -322,7 +350,7 @@ Contrast is the **population standard deviation** of pixel luminance values:
 
 ### 🧠 Memory Efficiency
 
-Both brightness and contrast (and blur via the isolate path) share a key optimization: **Welford's online algorithm** accumulates mean and variance incrementally. The package never materializes a per-pixel list of intermediate values, so memory stays constant regardless of image size.
+Brightness, contrast, and every sharpness tile share a key optimization: **Welford's online algorithm** accumulates mean and variance incrementally. The package never materializes a per-pixel list of intermediate values, so memory stays constant regardless of image size.
 
 ---
 

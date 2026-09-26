@@ -6,6 +6,7 @@ import 'package:image_quality_guard/src/detectors/sharpness_detector.dart';
 import 'package:image_quality_guard/src/models/sharpness_result.dart';
 
 import '../config/image_quality_config.dart';
+import '../detectors/blur_detector.dart';
 import '../detectors/brightness_detector.dart';
 import '../detectors/contrast_detector.dart';
 import '../models/image_quality_exception.dart';
@@ -59,15 +60,23 @@ class PreparedImage {
 class ImageAnalysisMetrics {
   const ImageAnalysisMetrics({
     required this.sharpness,
+    required this.blurScore,
     required this.brightness,
     required this.contrast,
+    required this.glareRatio,
   });
 
   final SharpnessResult sharpness;
 
+  /// Raw Laplacian variance of the analyzed image, at the analyzed resolution.
+  final double blurScore;
+
   final double brightness;
 
   final double contrast;
+
+  /// Fraction of blown out samples, see [glareRatio].
+  final double glareRatio;
 }
 
 /// Runs every CPU heavy step of the image quality check.
@@ -187,10 +196,22 @@ abstract final class ImageProcessor {
       prepared.luminance,
     );
 
-    final sharpness = SharpnessDetector.analyze(
+    // Laplacian variance depends on the image scale: the same photo scores
+    // lower, and its sensor noise weighs more, at 4032 px than at 1280 px.
+    // Every blur threshold is calibrated at the default analysis size, so
+    // sharpness is always measured at most at that size, even when brightness
+    // and contrast use more pixels.
+    final scaled = LuminanceExtractor.downsample(
       prepared.luminance,
       width: prepared.width,
       height: prepared.height,
+      maxDimension: ImageQualityConfig.defaultMaxAnalysisDimension,
+    );
+
+    final sharpness = SharpnessDetector.analyze(
+      scaled.luminance,
+      width: scaled.width,
+      height: scaled.height,
       blurThreshold: config.blurThreshold,
       denoise: config.denoiseBeforeSharpness,
       tileRows: config.tileRows,
@@ -203,8 +224,18 @@ abstract final class ImageProcessor {
 
     return ImageAnalysisMetrics(
       sharpness: sharpness,
+      // The legacy score keeps its full analysis resolution, as documented by
+      // ImageQualityValidator for maxAnalysisDimension 0.
+      blurScore: identical(scaled.luminance, prepared.luminance)
+          ? sharpness.rawLaplacianVariance
+          : BlurDetector.laplacianVariance(
+              prepared.luminance,
+              width: prepared.width,
+              height: prepared.height,
+            ),
       brightness: luminanceStatistics.mean,
       contrast: luminanceStatistics.standardDeviation,
+      glareRatio: glareRatio(prepared.luminance),
     );
   }
 
@@ -276,10 +307,11 @@ abstract final class ImageProcessor {
     return ImageQualityResult(
       isValid: !metrics.sharpness.isBlurry &&
           brightnessResult.isOptimal &&
-          contrastResult.hasGoodContrast,
+          contrastResult.hasGoodContrast &&
+          metrics.glareRatio <= config.maxGlareRatio,
 
       // Old/raw Laplacian score
-      blurScore: metrics.sharpness.rawLaplacianVariance,
+      blurScore: metrics.blurScore,
 
       // New robust score
       sharpnessScore: metrics.sharpness.sharpnessScore,
@@ -299,6 +331,8 @@ abstract final class ImageProcessor {
       brightness: metrics.brightness,
 
       contrast: metrics.contrast,
+
+      glareRatio: metrics.glareRatio,
 
       originalWidth: prepared.originalWidth,
 

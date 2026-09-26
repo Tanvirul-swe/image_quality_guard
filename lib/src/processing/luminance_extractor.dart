@@ -59,7 +59,53 @@ abstract final class LuminanceExtractor {
     return samples;
   }
 
+  /// Area averages a [width] x [height] [luminance] buffer so that its longest
+  /// side is at most [maxDimension], preserving the aspect ratio.
+  ///
+  /// Returns the buffer unchanged when it is already small enough. Every output
+  /// sample is the mean of the input block it covers, the same reduction
+  /// `copyResize` applies with `Interpolation.average`.
+  static ({Uint8List luminance, int width, int height}) downsample(
+    Uint8List luminance, {
+    required int width,
+    required int height,
+    required int maxDimension,
+  }) {
+    final longestSide = width > height ? width : height;
+    if (maxDimension <= 0 || longestSide <= maxDimension) {
+      return (luminance: luminance, width: width, height: height);
+    }
+
+    final scale = maxDimension / longestSide;
+    final outWidth = (width * scale).round().clamp(1, width);
+    final outHeight = (height * scale).round().clamp(1, height);
+    final output = Uint8List(outWidth * outHeight);
+
+    var index = 0;
+    for (var outY = 0; outY < outHeight; outY++) {
+      final yStart = outY * height ~/ outHeight;
+      final yEnd = (outY + 1) * height ~/ outHeight;
+      for (var outX = 0; outX < outWidth; outX++) {
+        final xStart = outX * width ~/ outWidth;
+        final xEnd = (outX + 1) * width ~/ outWidth;
+        var sum = 0;
+        for (var y = yStart; y < yEnd; y++) {
+          final row = y * width;
+          for (var x = xStart; x < xEnd; x++) {
+            sum += luminance[row + x];
+          }
+        }
+        final count = (yEnd - yStart) * (xEnd - xStart);
+        output[index++] = (sum + count ~/ 2) ~/ count;
+      }
+    }
+
+    return (luminance: output, width: outWidth, height: outHeight);
+  }
+
   /// Rec. 601 luma of a single [pixel], quantized to the 0-255 range.
   static int _luma(img.Pixel pixel) =>
-      (0.299 * pixel.r + 0.587 * pixel.g + 0.114 * pixel.b).round().clamp(0, 255);
+      (0.299 * pixel.r + 0.587 * pixel.g + 0.114 * pixel.b)
+          .round()
+          .clamp(0, 255);
 }

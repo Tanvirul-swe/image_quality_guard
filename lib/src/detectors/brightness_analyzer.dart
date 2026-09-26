@@ -65,4 +65,3 @@ class BrightnessAnalyzer {
         maxBrightness: maxBrightness,
       ).classify(averageBrightness);
 }
-

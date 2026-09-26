@@ -1,5 +1,5 @@
-/// A Flutter/Dart package to detect blur, brightness, and contrast issues
-/// in images with configurable thresholds.
+/// A Flutter/Dart package to detect blur, glare, brightness, and contrast
+/// issues in images with configurable thresholds.
 ///
 /// This package provides tools for validating image quality before processing,
 /// which is especially useful for card scanning, document scanning, and

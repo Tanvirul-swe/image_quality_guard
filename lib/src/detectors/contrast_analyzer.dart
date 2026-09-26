@@ -44,11 +44,11 @@ class ContrastAnalyzer {
   /// The image is not modified. Returns a [ContrastResult] containing the
   /// contrast analysis.
   ContrastResult analyzeFromImage(img.Image image) => classify(
-        ContrastDetector.standardDeviationOf(LuminanceExtractor.fromImage(image)),
+        ContrastDetector.standardDeviationOf(
+            LuminanceExtractor.fromImage(image)),
       );
 
   /// Classifies an already measured [contrastScore].
   ContrastResult classify(double contrastScore) =>
       ContrastDetector(minContrast: minContrast).classify(contrastScore);
 }
-
