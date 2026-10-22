@@ -1,4 +1,3 @@
-import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:image/image.dart' as img;
@@ -144,38 +143,31 @@ abstract final class ImageProcessor {
     // containers, before any pixel is read.
     var source = LuminanceExtractor.normalize(image);
 
-    // EXIF orientations 5-8 transpose the image, so the visually correct size is
-    // the swapped one. `copyResize` applies the orientation internally, which
-    // keeps the reported dimensions and the analyzed dimensions aligned.
-    final transposed = _isTransposed(source);
-    var originalWidth = transposed ? source.height : source.width;
-    var originalHeight = transposed ? source.width : source.height;
-
-    var analyzedWidth = originalWidth;
-    var analyzedHeight = originalHeight;
-
-    if (maxAnalysisDimension > 0) {
-      final longestSide = math.max(originalWidth, originalHeight);
-      if (longestSide > maxAnalysisDimension) {
-        final scale = maxAnalysisDimension / longestSide;
-        analyzedWidth = math.max(1, (originalWidth * scale).round());
-        analyzedHeight = math.max(1, (originalHeight * scale).round());
-        // Area averaging keeps the reduced image free of the aliasing that a
-        // nearest neighbour reduction would add, which matters because blur
-        // detection measures exactly that kind of detail.
-        source = img.copyResize(
-          source,
-          width: analyzedWidth,
-          height: analyzedHeight,
-          interpolation: img.Interpolation.average,
-        );
-      }
+    final orientation = source.exif.imageIfd.hasOrientation
+        ? source.exif.imageIfd.orientation
+        : 1;
+    if (orientation != null && orientation > 1) {
+      source = img.bakeOrientation(source);
     }
 
+    final originalWidth = source.width;
+    final originalHeight = source.height;
+
+    // Extract 1-channel luminance from the full source image, then downsample
+    // the single-channel luminance buffer directly. This avoids allocating
+    // and interpolating 3-channel RGB images with copyResize.
+    final fullLuminance = LuminanceExtractor.fromImage(source);
+    final down = LuminanceExtractor.downsample(
+      fullLuminance,
+      width: originalWidth,
+      height: originalHeight,
+      maxDimension: maxAnalysisDimension,
+    );
+
     return PreparedImage(
-      luminance: LuminanceExtractor.fromImage(source),
-      width: analyzedWidth,
-      height: analyzedHeight,
+      luminance: down.luminance,
+      width: down.width,
+      height: down.height,
       originalWidth: originalWidth,
       originalHeight: originalHeight,
     );
@@ -183,16 +175,15 @@ abstract final class ImageProcessor {
 
   /// Runs blur, brightness and contrast over a [prepared] image.
   ///
-  /// One traversal of the luminance buffer feeds brightness and contrast, a
-  /// second traversal feeds the Laplacian blur score. Neither traversal
-  /// allocates a value per pixel, so memory use stays proportional to the
-  /// luminance buffer itself. New CPU intensive metrics only need to be added
-  /// here to run inside the background isolate as well.
+  /// One traversal of the luminance buffer feeds brightness, contrast, and
+  /// glare, and a second traversal feeds the Laplacian blur score. Neither
+  /// traversal allocates a value per pixel, so memory use stays proportional
+  /// to the luminance buffer itself.
   static ImageAnalysisMetrics analyze(
     PreparedImage prepared, {
     required ImageQualityConfig config,
   }) {
-    final luminanceStatistics = summarizeLuminance(
+    final stats = summarizeLuminanceAndGlare(
       prepared.luminance,
     );
 
@@ -233,9 +224,9 @@ abstract final class ImageProcessor {
               width: prepared.width,
               height: prepared.height,
             ),
-      brightness: luminanceStatistics.mean,
-      contrast: luminanceStatistics.standardDeviation,
-      glareRatio: glareRatio(prepared.luminance),
+      brightness: stats.mean,
+      contrast: stats.standardDeviation,
+      glareRatio: stats.glareRatio,
     );
   }
 
@@ -346,13 +337,5 @@ abstract final class ImageProcessor {
 
       config: config,
     );
-  }
-
-  /// Whether [image] carries an EXIF orientation that swaps width and height.
-  static bool _isTransposed(img.Image image) {
-    final orientation = image.exif.imageIfd.hasOrientation
-        ? image.exif.imageIfd.orientation
-        : 1;
-    return orientation != null && orientation >= 5 && orientation <= 8;
   }
 }

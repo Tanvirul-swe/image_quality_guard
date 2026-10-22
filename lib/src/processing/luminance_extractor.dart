@@ -81,13 +81,23 @@ abstract final class LuminanceExtractor {
     final outHeight = (height * scale).round().clamp(1, height);
     final output = Uint8List(outWidth * outHeight);
 
+    // Precalculate horizontal mapping once across all rows.
+    final xStarts = Int32List(outWidth);
+    final xEnds = Int32List(outWidth);
+    for (var outX = 0; outX < outWidth; outX++) {
+      xStarts[outX] = outX * width ~/ outWidth;
+      xEnds[outX] = (outX + 1) * width ~/ outWidth;
+    }
+
     var index = 0;
     for (var outY = 0; outY < outHeight; outY++) {
       final yStart = outY * height ~/ outHeight;
       final yEnd = (outY + 1) * height ~/ outHeight;
+      final dy = yEnd - yStart;
+
       for (var outX = 0; outX < outWidth; outX++) {
-        final xStart = outX * width ~/ outWidth;
-        final xEnd = (outX + 1) * width ~/ outWidth;
+        final xStart = xStarts[outX];
+        final xEnd = xEnds[outX];
         var sum = 0;
         for (var y = yStart; y < yEnd; y++) {
           final row = y * width;
@@ -95,8 +105,8 @@ abstract final class LuminanceExtractor {
             sum += luminance[row + x];
           }
         }
-        final count = (yEnd - yStart) * (xEnd - xStart);
-        output[index++] = (sum + count ~/ 2) ~/ count;
+        final count = dy * (xEnd - xStart);
+        output[index++] = (sum + (count >> 1)) ~/ count;
       }
     }
 

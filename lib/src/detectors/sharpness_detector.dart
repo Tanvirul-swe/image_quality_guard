@@ -1,8 +1,8 @@
+import 'dart:math' as math;
 import 'dart:typed_data';
 
 import '../models/sharpness_result.dart';
 import '../processing/gaussian_smoother.dart';
-import '../processing/luminance_statistics.dart';
 import 'blur_detector.dart';
 import 'tenengrad_detector.dart';
 
@@ -67,11 +67,13 @@ abstract final class SharpnessDetector {
           )
         : luminance;
 
-    final denoisedLaplacian = BlurDetector.laplacianVariance(
-      processed,
-      width: width,
-      height: height,
-    );
+    final denoisedLaplacian = denoise
+        ? BlurDetector.laplacianVariance(
+            processed,
+            width: width,
+            height: height,
+          )
+        : rawLaplacian;
 
     // =========================================================
     // 3. Independent Sobel/Tenengrad metric
@@ -205,19 +207,23 @@ abstract final class SharpnessDetector {
     required int yStart,
     required int yEnd,
   }) {
-    final statistics = RunningStatistics();
+    final count = (yEnd - yStart) * (xEnd - xStart);
+    if (count <= 0) return 0.0;
 
+    var sum = 0;
+    var sumSq = 0;
     for (var y = yStart; y < yEnd; y++) {
       final row = y * width;
-
       for (var x = xStart; x < xEnd; x++) {
-        statistics.add(
-          luminance[row + x].toDouble(),
-        );
+        final val = luminance[row + x];
+        sum += val;
+        sumSq += val * val;
       }
     }
 
-    return statistics.standardDeviation;
+    final mean = sum / count;
+    final variance = (sumSq / count) - (mean * mean);
+    return variance > 0 ? math.sqrt(variance) : 0.0;
   }
 
   static double _regionLaplacianVariance(
@@ -228,26 +234,34 @@ abstract final class SharpnessDetector {
     required int yStart,
     required int yEnd,
   }) {
-    final statistics = RunningStatistics();
+    final count = (yEnd - yStart - 2) * (xEnd - xStart - 2);
+    if (count <= 0) return 0.0;
+
+    var sum = 0;
+    var sumSq = 0;
 
     // Skip tile-local borders.
     for (var y = yStart + 1; y < yEnd - 1; y++) {
       final row = y * width;
+      final prevRow = row - width;
+      final nextRow = row + width;
 
       for (var x = xStart + 1; x < xEnd - 1; x++) {
-        final index = row + x;
+        final center = row + x;
+        final response = (luminance[center] << 2) -
+            luminance[center - 1] -
+            luminance[center + 1] -
+            luminance[prevRow + x] -
+            luminance[nextRow + x];
 
-        final response = 4.0 * luminance[index] -
-            luminance[index - 1] -
-            luminance[index + 1] -
-            luminance[index - width] -
-            luminance[index + width];
-
-        statistics.add(response);
+        sum += response;
+        sumSq += response * response;
       }
     }
 
-    return statistics.variance;
+    final mean = sum / count;
+    final variance = (sumSq / count) - (mean * mean);
+    return variance > 0 ? variance : 0.0;
   }
 
   static double _percentile(

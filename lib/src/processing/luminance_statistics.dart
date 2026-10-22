@@ -17,6 +17,18 @@ import 'dart:typed_data';
 /// print(statistics.standardDeviation);
 /// ```
 class RunningStatistics {
+  /// Creates an empty running statistics accumulator.
+  RunningStatistics();
+
+  /// Creates a statistics object from precomputed values.
+  RunningStatistics.fromValues({
+    required int count,
+    required double mean,
+    required double sumOfSquaredDeviations,
+  })  : _count = count,
+        _mean = mean,
+        _sumOfSquaredDeviations = sumOfSquaredDeviations;
+
   int _count = 0;
   double _mean = 0;
   double _sumOfSquaredDeviations = 0;
@@ -50,16 +62,85 @@ class RunningStatistics {
 }
 
 /// Calculates mean and standard deviation over the luminance [samples] in a
-/// single pass.
+/// single pass using a 256-element histogram.
 ///
 /// Used for the brightness (mean) and contrast (standard deviation) metrics so
-/// both are derived from the same traversal of the image.
+/// both are derived from the same traversal of the image without per-pixel
+/// floating-point division.
 RunningStatistics summarizeLuminance(Uint8List samples) {
-  final statistics = RunningStatistics();
-  for (var index = 0; index < samples.length; index++) {
-    statistics.add(samples[index].toDouble());
+  final len = samples.length;
+  if (len == 0) return RunningStatistics();
+
+  final counts = Int32List(256);
+  for (var index = 0; index < len; index++) {
+    counts[samples[index]]++;
   }
-  return statistics;
+
+  var sum = 0;
+  for (var v = 0; v < 256; v++) {
+    final c = counts[v];
+    if (c > 0) sum += v * c;
+  }
+
+  final mean = sum / len;
+  var sumOfSqDev = 0.0;
+  for (var v = 0; v < 256; v++) {
+    final c = counts[v];
+    if (c > 0) {
+      final diff = v - mean;
+      sumOfSqDev += diff * diff * c;
+    }
+  }
+
+  return RunningStatistics.fromValues(
+    count: len,
+    mean: mean,
+    sumOfSquaredDeviations: sumOfSqDev,
+  );
+}
+
+/// Calculates mean, standard deviation, and glare ratio in a single fast pass
+/// over [samples].
+({double mean, double standardDeviation, double glareRatio})
+    summarizeLuminanceAndGlare(Uint8List samples) {
+  final len = samples.length;
+  if (len == 0) {
+    return (mean: 0.0, standardDeviation: 0.0, glareRatio: 0.0);
+  }
+
+  final counts = Int32List(256);
+  for (var index = 0; index < len; index++) {
+    counts[samples[index]]++;
+  }
+
+  var sum = 0;
+  var glareCount = 0;
+  for (var v = 0; v < 256; v++) {
+    final c = counts[v];
+    if (c > 0) {
+      sum += v * c;
+      if (v >= glareLuminance) {
+        glareCount += c;
+      }
+    }
+  }
+
+  final mean = sum / len;
+  var sumOfSqDev = 0.0;
+  for (var v = 0; v < 256; v++) {
+    final c = counts[v];
+    if (c > 0) {
+      final diff = v - mean;
+      sumOfSqDev += diff * diff * c;
+    }
+  }
+
+  final variance = sumOfSqDev / len;
+  return (
+    mean: mean,
+    standardDeviation: math.sqrt(variance),
+    glareRatio: glareCount / len,
+  );
 }
 
 /// Luminance at and above which a sample counts as blown out (glare).
@@ -71,10 +152,11 @@ const int glareLuminance = 250;
 /// the text underneath to pure white while the rest of the photo keeps the
 /// average in range. Counting clipped samples measures exactly that loss.
 double glareRatio(Uint8List samples) {
-  if (samples.isEmpty) return 0;
+  final len = samples.length;
+  if (len == 0) return 0;
   var clipped = 0;
-  for (var index = 0; index < samples.length; index++) {
+  for (var index = 0; index < len; index++) {
     if (samples[index] >= glareLuminance) clipped++;
   }
-  return clipped / samples.length;
+  return clipped / len;
 }

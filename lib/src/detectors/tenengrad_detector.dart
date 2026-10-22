@@ -16,42 +16,38 @@ abstract final class TenengradDetector {
       return 0;
     }
 
-    double energySum = 0;
-    var count = 0;
+    var energySum = 0;
+    final count = (width - 2) * (height - 2);
 
     for (var y = 1; y < height - 1; y++) {
-      final row = y * width;
+      final topRow = (y - 1) * width;
+      final midRow = y * width;
+      final botRow = (y + 1) * width;
 
       for (var x = 1; x < width - 1; x++) {
-        final i = row + x;
+        final xm1 = x - 1;
+        final xp1 = x + 1;
 
-        final topLeft = luminance[i - width - 1];
-        final top = luminance[i - width];
-        final topRight = luminance[i - width + 1];
+        final topLeft = luminance[topRow + xm1];
+        final top = luminance[topRow + x];
+        final topRight = luminance[topRow + xp1];
 
-        final left = luminance[i - 1];
-        final right = luminance[i + 1];
+        final left = luminance[midRow + xm1];
+        final right = luminance[midRow + xp1];
 
-        final bottomLeft = luminance[i + width - 1];
-        final bottom = luminance[i + width];
-        final bottomRight = luminance[i + width + 1];
+        final bottomLeft = luminance[botRow + xm1];
+        final bottom = luminance[botRow + x];
+        final bottomRight = luminance[botRow + xp1];
 
-        final gx = -topLeft +
-            topRight -
-            (2 * left) +
-            (2 * right) -
-            bottomLeft +
-            bottomRight;
+        final gx = (topRight - topLeft) +
+            ((right - left) << 1) +
+            (bottomRight - bottomLeft);
 
-        final gy = -topLeft -
-            (2 * top) -
-            topRight +
-            bottomLeft +
-            (2 * bottom) +
-            bottomRight;
+        final gy = (bottomLeft - topLeft) +
+            ((bottom - top) << 1) +
+            (bottomRight - topRight);
 
         energySum += (gx * gx) + (gy * gy);
-        count++;
       }
     }
 

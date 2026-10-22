@@ -5,7 +5,6 @@ import 'package:image/image.dart' as img;
 
 import '../models/blur_result.dart';
 import '../processing/luminance_extractor.dart';
-import '../processing/luminance_statistics.dart';
 
 /// Detects blur in images using the Laplacian variance method.
 ///
@@ -96,21 +95,31 @@ class BlurDetector {
       return 0;
     }
 
-    final statistics = RunningStatistics();
+    var sum = 0;
+    var sumSq = 0;
+    final count = (width - 2) * (height - 2);
+
     for (var y = 1; y < height - 1; y++) {
       final rowStart = y * width;
+      final prevRow = rowStart - width;
+      final nextRow = rowStart + width;
+
       for (var x = 1; x < width - 1; x++) {
-        final index = rowStart + x;
-        final response = 4.0 * luminance[index] -
-            luminance[index - 1] -
-            luminance[index + 1] -
-            luminance[index - width] -
-            luminance[index + width];
-        statistics.add(response);
+        final center = rowStart + x;
+        final response = (luminance[center] << 2) -
+            luminance[center - 1] -
+            luminance[center + 1] -
+            luminance[prevRow + x] -
+            luminance[nextRow + x];
+
+        sum += response;
+        sumSq += response * response;
       }
     }
 
-    return statistics.variance;
+    final mean = sum / count;
+    final variance = (sumSq / count) - (mean * mean);
+    return variance > 0 ? variance : 0.0;
   }
 
   /// Calculates confidence based on distance from threshold.
